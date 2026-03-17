@@ -1,0 +1,646 @@
+"""State Manager - The memory/brain of C.A.P.O.
+
+Manages per-target state in JSON files, tracking discovered intelligence:
+- Target IP/domain, OS
+- Open ports and services
+- Discovered users, hashes, credentials
+- Web directories, vhosts
+- Notes and flags
+"""
+
+import json
+import re
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from filelock import FileLock
+
+from capo import config
+from capo import campaign
+
+# Schema version for state.json — bump when adding/changing fields.
+# Migration logic in StateManager._migrate_state() handles upgrades.
+CURRENT_SCHEMA_VERSION = 2
+
+# Matches IPv4 addresses or hostnames (alphanumeric + dots/hyphens)
+_TARGET_RE = re.compile(
+    r"^(?:\d{1,3}\.){3}\d{1,3}$"          # IPv4
+    r"|^[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$"  # hostname/FQDN
+)
+
+
+def _current_target_file() -> Path:
+    return config.CAPO_HOME / ".current_target"
+
+
+class StateManager:
+    """Manages target state stored in JSON files under the workspace."""
+
+    def __init__(self):
+        self._target: str | None = None
+        self._state: dict[str, Any] = {}
+        self._workspace: Path | None = None
+        self._auto_load()
+
+    def _auto_load(self):
+        """Auto-load the last used target on startup."""
+        ctf = _current_target_file()
+        if ctf.exists():
+            target = ctf.read_text(encoding="utf-8").strip()
+            if target:
+                safe_name = target.replace("/", "_").replace(":", "_")
+                ws = config.WORKSPACES_DIR / safe_name
+                if (ws / "state.json").exists():
+                    self._target = target
+                    self._workspace = ws
+                    self._load_state()
+
+    @property
+    def target(self) -> str | None:
+        return self._target
+
+    @property
+    def workspace(self) -> Path | None:
+        return self._workspace
+
+    @property
+    def state(self) -> dict[str, Any]:
+        return self._state
+
+    def set_target(self, target: str) -> Path:
+        """Set current target and load/create its workspace.
+
+        Returns the workspace path.
+        Raises ValueError if target format is invalid.
+        """
+        if not _TARGET_RE.match(target):
+            raise ValueError(
+                f"Invalid target format: '{target}'. "
+                "Expected an IPv4 address (e.g. 10.10.10.100) or hostname."
+            )
+        self._target = target
+        safe_name = target.replace("/", "_").replace(":", "_")
+        self._workspace = config.WORKSPACES_DIR / safe_name
+
+        if campaign.campaign_manager.active:
+            campaign.campaign_manager.add_host(str(self._target))
+
+        self._init_workspace()
+        self._load_state()
+        # Persist current target for cross-invocation recall
+        config.CAPO_HOME.mkdir(parents=True, exist_ok=True)
+        _current_target_file().write_text(target, encoding="utf-8")
+        return self._workspace
+
+    def _init_workspace(self):
+        """Create OSCP-standard workspace structure."""
+        dirs = ["scans", "loot", "exploits", "evidence"]
+        for d in dirs:
+            (self._workspace / d).mkdir(parents=True, exist_ok=True)
+
+        # Create notes template if not exists
+        notes_file = self._workspace / "notes.md"
+        if not notes_file.exists():
+            template = self._generate_notes_template()
+            notes_file.write_text(template, encoding="utf-8")
+
+    def _generate_notes_template(self) -> str:
+        """Generate OSCP-style notes template."""
+        return f"""# Target: {self._target}
+## Date: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}
+
+## Summary
+- **IP:** {self._target}
+- **OS:** Unknown
+- **Difficulty:** Unknown
+
+## Recon
+
+### Port Scan
+```
+(Paste Nmap output here)
+```
+
+### Service Enumeration
+| Port | Service | Version | Notes |
+|------|---------|---------|-------|
+|      |         |         |       |
+
+## Initial Foothold
+- **Vulnerability:**
+- **Exploit/Method:**
+- **Proof:**
+
+## Privilege Escalation
+- **Vector:**
+- **Method:**
+- **Proof:**
+
+## Flags
+- **local.txt:**
+- **proof.txt:**
+
+## Credentials Found
+| Username | Password/Hash | Service | Notes |
+|----------|---------------|---------|-------|
+|          |               |         |       |
+
+## Loot
+- Files:
+- SSH Keys:
+
+## Timeline
+| Time | Action | Result |
+|------|--------|--------|
+|      |        |        |
+"""
+
+    def _state_file(self) -> Path:
+        return self._workspace / "state.json"
+
+    def _load_state(self):
+        """Load state from JSON or create fresh state."""
+        sf = self._state_file()
+        if sf.exists():
+            try:
+                self._state = json.loads(sf.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                from rich.console import Console
+                Console().print(f"[red]Warning: {sf} is malformed or empty. Starting fresh state temporarily.[/red]")
+                self._state = self._fresh_state()
+        else:
+            self._state = self._fresh_state()
+            self._save_state()
+
+        # Ensure base schema
+        fresh = self._fresh_state()
+        for k, v in fresh.items():
+            self._state.setdefault(k, v)
+
+        # Run schema migration for older state files
+        self._migrate_state()
+
+    def _fresh_state(self) -> dict[str, Any]:
+        return {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "target": self._target,
+            "ip": self._target,
+            "domain": "",
+            "os": "",
+            "hostname": "",
+            "ports": [],
+            "services": {},
+            "users": [],
+            "hashes": [],
+            "credentials": [],
+            "directories": [],
+            "vhosts": [],
+            "shares": [],
+            "domain_info": {
+                "domain_name": "",
+                "dc_ip": "",
+                "dns_name": "",
+            },
+            "notes": [],
+            "flags": {
+                "local_txt": "",
+                "proof_txt": "",
+            },
+            "scan_history": [],
+            "methodology_progress": {},
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    def _migrate_state(self):
+        """Upgrade older state files to the current schema version."""
+        version = self._state.get("schema_version", 1)
+        if version >= CURRENT_SCHEMA_VERSION:
+            return  # already up-to-date
+
+        # v1 → v2: add schema_version field + methodology_progress
+        if version < 2:
+            self._state.setdefault("methodology_progress", {})
+            self._state.setdefault("vhosts", [])
+            self._state.setdefault("shares", [])
+            self._state["schema_version"] = 2
+
+        # Future: add v2 → v3, v3 → v4, etc. here
+
+        self._save_state()
+
+    def _lock_file(self) -> FileLock:
+        """Return a FileLock for the state file (created lazily)."""
+        return FileLock(str(self._state_file()) + ".lock", timeout=5)
+
+    def _merge_state(self, disk_state: dict) -> dict:
+        """Merge in-memory state with on-disk state.
+
+        Lists are deduplicated-union'd so concurrent processes accumulate
+        findings. Dicts are shallow-merged. Scalars use in-memory value.
+        """
+        merged = dict(disk_state)
+        for key, mem_val in self._state.items():
+            disk_val = merged.get(key)
+            if isinstance(mem_val, list) and isinstance(disk_val, list):
+                if key == "ports" and all(isinstance(x, dict) for x in mem_val + disk_val):
+                    mem_keys = {(p.get("port"), p.get("protocol")) for p in mem_val}
+                    merged_list = list(disk_val)
+                    # Replace disk dicts with newer mem dicts
+                    for i, p in enumerate(merged_list):
+                        if (p.get("port"), p.get("protocol")) in mem_keys:
+                            # Replace with the memory version
+                            merged_list[i] = next(m for m in mem_val if m.get("port") == p.get("port") and m.get("protocol") == p.get("protocol"))
+                    # Add remaining mem dicts
+                    disk_keys = {(p.get("port"), p.get("protocol")) for p in disk_val}
+                    for m in mem_val:
+                        if (m.get("port"), m.get("protocol")) not in disk_keys:
+                            merged_list.append(m)
+                    merged[key] = merged_list
+                    
+                elif key == "credentials" and all(isinstance(x, dict) for x in mem_val + disk_val):
+                    disk_keys = {(c.get("username"), c.get("password"), c.get("service")) for c in disk_val}
+                    merged_list = list(disk_val)
+                    for c in mem_val:
+                        if (c.get("username"), c.get("password"), c.get("service")) not in disk_keys:
+                            merged_list.append(c)
+                    merged[key] = merged_list
+                    
+                elif key == "hashes" and all(isinstance(x, dict) for x in mem_val + disk_val):
+                    disk_keys = {h.get("hash") for h in disk_val}
+                    merged_list = list(disk_val)
+                    for h in mem_val:
+                        if h.get("hash") not in disk_keys:
+                            merged_list.append(h)
+                    merged[key] = merged_list
+                    
+                else:
+                    # Deduplicated union preserving order for generic lists
+                    seen = list(disk_val)
+                    for item in mem_val:
+                        if item not in seen:
+                            seen.append(item)
+                    merged[key] = seen
+            elif isinstance(mem_val, dict) and isinstance(disk_val, dict):
+                merged[key] = {**disk_val, **mem_val}
+            else:
+                merged[key] = mem_val
+        return merged
+
+    def _save_state(self):
+        """Persist state to JSON file with file-locking and merge.
+
+        Acquires a file lock, re-reads from disk, merges in-memory
+        changes with any concurrent updates, and writes back.
+        """
+        if self._workspace is None:
+            return
+        self._state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        sf = self._state_file()
+
+        with self._lock_file():
+            # Re-read disk version to pick up concurrent changes
+            if sf.exists():
+                try:
+                    disk_state = json.loads(sf.read_text(encoding="utf-8"))
+                    self._state = self._merge_state(disk_state)
+                except (json.JSONDecodeError, OSError):
+                    pass  # disk is corrupt or missing — just write ours
+
+            # Atomic write via temp file
+            tmp = sf.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self._state, indent=2, default=str), encoding="utf-8")
+            shutil.move(str(tmp), str(sf))
+
+    # --- Public Getters ---
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a state value by key, merging with campaign data if active."""
+        local_val = self._state.get(key, default)
+        
+        if not campaign.campaign_manager.active:
+            return local_val
+            
+        if key in ("users", "hashes", "credentials"):
+            camp_list = campaign.campaign_manager._state.get(key, [])
+            local_list = local_val if isinstance(local_val, list) else []
+            # For credentials/hashes (dicts), simple "not in" isn't perfect but sufficient for simple display uniqueness
+            # A more robust union could be done, but lists of dicts usually have proper dedup at insert time anyway.
+            # To be safe against duplicates, we return campaign items first, then local items not in campaign list
+            merged = list(camp_list)
+            for item in local_list:
+                if item not in merged:
+                    merged.append(item)
+            return merged
+            
+        if key == "domain_info":
+            camp_di = campaign.campaign_manager._state.get("domain_info", {})
+            local_di = local_val if isinstance(local_val, dict) else {}
+            return {**local_di, **camp_di}
+            
+        return local_val
+
+    def get_var(self, var_name: str) -> str:
+        """Get a variable value for template injection.
+
+        Supports: {IP}, {DOMAIN}, {USER}, {PASS}, {DC_IP}, {HOSTNAME}, etc.
+        """
+        # Campaign fields take precedence if campaign is active
+        domain = campaign.campaign_manager.get_var("DOMAIN") if campaign.campaign_manager.active else self._state.get("domain", "")
+        dc_ip = campaign.campaign_manager.get_var("DC_IP") if campaign.campaign_manager.active else self._state.get("domain_info", {}).get("dc_ip", "")
+        dns_name = campaign.campaign_manager.get_var("DNS_NAME") if campaign.campaign_manager.active else self._state.get("domain_info", {}).get("dns_name", "")
+        
+        if campaign.campaign_manager.active:
+            user = campaign.campaign_manager.get_var("USER")
+            users_file = campaign.campaign_manager.get_var("USERFILE")
+            hashes_file = str(campaign.campaign_manager._dir / "loot" / "hashes.txt") if campaign.campaign_manager._dir else ""
+            pass_file = campaign.campaign_manager.get_var("PASSFILE")
+            password = campaign.campaign_manager.get_var("PASS")
+        else:
+            creds = [c for c in self._state.get("credentials", []) if c.get("password") and c.get("username")]
+            if creds:
+                user = creds[0]["username"]
+                password = creds[0]["password"]
+            else:
+                user = self._state.get("users", [""])[0] if self._state.get("users") else ""
+                password = ""
+            users_file = str(self._workspace / "loot" / "users.txt") if self._workspace else ""
+            hashes_file = str(self._workspace / "loot" / "hashes.txt") if self._workspace else ""
+            pass_file = str(self._workspace / "loot" / "passwords.txt") if self._workspace else ""
+
+        var_map = {
+            "IP": self._state.get("ip", ""),
+            "RHOST": self._state.get("ip", ""),
+            "TARGET": self._state.get("ip", ""),
+            "DOMAIN": domain,
+            "HOSTNAME": self._state.get("hostname", ""),
+            "DC_IP": dc_ip,
+            "DNS_NAME": dns_name,
+            "USER": user,
+            "PASS": password,
+            "USERS_FILE": users_file,
+            "USERFILE": users_file,
+            "HASHES_FILE": hashes_file,
+            "HASHFILE": hashes_file,
+            "PASSFILE": pass_file,
+            "LHOST": "",  # User must set manually
+            "LPORT": "443",
+            "WORDLIST": "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",
+        }
+        return var_map.get(var_name.upper(), "")
+
+    # --- Public Setters ---
+
+    def set(self, key: str, value: Any):
+        """Set a state value and persist."""
+        self._state[key] = value
+        self._save_state()
+
+    def add_port(self, port: int, protocol: str = "tcp", service: str = "",
+                 version: str = "", state: str = "open"):
+        """Add a discovered port to state."""
+        port_entry = {
+            "port": port,
+            "protocol": protocol,
+            "service": service,
+            "version": version,
+            "state": state,
+        }
+        # Update existing or add new
+        existing = [p for p in self._state["ports"] if p["port"] == port and p["protocol"] == protocol]
+        if existing:
+            existing[0].update(port_entry)
+        else:
+            self._state["ports"].append(port_entry)
+        # Also update services dict
+        self._state["services"][f"{port}/{protocol}"] = {
+            "service": service,
+            "version": version,
+        }
+        self._save_state()
+
+    def add_user(self, username: str):
+        """Add a discovered username."""
+        if campaign.campaign_manager.active:
+            campaign.campaign_manager.add_user(username)
+        else:
+            self._state.setdefault("users", [])
+            if username and username not in self._state["users"]:
+                self._state["users"].append(username)
+                self._save_state()
+                # Also write to users.txt for tool consumption
+                self._write_list_file("loot/users.txt", self._state["users"])
+
+    def add_hash(self, hash_str: str, username: str = ""):
+        """Add a discovered hash."""
+        if campaign.campaign_manager.active:
+            campaign.campaign_manager.add_hash(hash_str, username)
+        else:
+            self._state.setdefault("hashes", [])
+            entry = {"hash": hash_str, "username": username}
+            if entry not in self._state["hashes"]:
+                self._state["hashes"].append(entry)
+                self._save_state()
+                # Write hashes to file
+                hashes = [h["hash"] for h in self._state["hashes"]]
+                self._write_list_file("loot/hashes.txt", hashes)
+
+    def add_credential(self, username: str, password: str, service: str = ""):
+        """Add discovered credentials."""
+        if campaign.campaign_manager.active:
+            campaign.campaign_manager.add_credential(username, password, service)
+        else:
+            self._state.setdefault("credentials", [])
+            cred = {"username": username, "password": password, "service": service}
+            if cred not in self._state["credentials"]:
+                self._state["credentials"].append(cred)
+                self._save_state()
+                passwords = [c["password"] for c in self._state["credentials"] if c.get("password")]
+                # Dedup passwords before writing
+                seen_pass = []
+                for p in passwords:
+                    if p not in seen_pass:
+                        seen_pass.append(p)
+                self._write_list_file("loot/passwords.txt", seen_pass)
+
+    def add_directory(self, path: str, status_code: int = 200):
+        """Add a discovered web directory."""
+        self._state.setdefault("directories", [])
+        entry = {"path": path, "status": status_code}
+        if entry not in self._state["directories"]:
+            self._state["directories"].append(entry)
+            self._save_state()
+
+    def add_vhost(self, vhost: str):
+        """Add a discovered virtual host."""
+        if vhost and vhost not in self._state["vhosts"]:
+            self._state["vhosts"].append(vhost)
+            self._save_state()
+
+    def add_share(self, share_name: str, permissions: str = "", comment: str = ""):
+        """Add a discovered SMB share."""
+        entry = {"name": share_name, "permissions": permissions, "comment": comment}
+        existing = [s for s in self._state["shares"] if s["name"] == share_name]
+        if existing:
+            existing[0].update(entry)
+        else:
+            self._state["shares"].append(entry)
+        self._save_state()
+
+    def add_scan_record(self, tool: str, command: str, output_file: str = "",
+                        duration: float = 0.0):
+        """Record a scan execution in history."""
+        record = {
+            "tool": tool,
+            "command": command,
+            "output_file": output_file,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "duration": duration,
+        }
+        self._state["scan_history"].append(record)
+        self._save_state()
+
+    def add_note(self, note: str):
+        """Add a freeform note."""
+        entry = {
+            "note": note,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        self._state["notes"].append(entry)
+        self._save_state()
+
+    def set_flag(self, flag_type: str, value: str):
+        """Set local.txt or proof.txt flag."""
+        if flag_type in self._state["flags"]:
+            self._state["flags"][flag_type] = value
+            self._save_state()
+
+    def _write_list_file(self, relative_path: str, items: list[str]):
+        """Write a list of strings to a file in the workspace."""
+        if self._workspace is None:
+            return
+        fpath = self._workspace / relative_path
+        fpath.parent.mkdir(parents=True, exist_ok=True)
+        fpath.write_text("\n".join(str(i) for i in items) + "\n", encoding="utf-8")
+
+    # --- Display helpers ---
+
+    def get_open_ports(self) -> list[int]:
+        """Get list of open port numbers."""
+        return [p["port"] for p in self._state.get("ports", []) if p.get("state") == "open"]
+
+    def get_services_summary(self) -> dict[int, str]:
+        """Get port -> service name mapping."""
+        result = {}
+        for p in self._state.get("ports", []):
+            if p.get("state") == "open":
+                result[p["port"]] = p.get("service", "unknown")
+        return result
+
+    def has_service(self, service_name: str) -> bool:
+        """Check if a specific service was discovered."""
+        for p in self._state.get("ports", []):
+            if service_name.lower() in p.get("service", "").lower():
+                return True
+        return False
+
+    def export_state(self) -> str:
+        """Export current state as formatted JSON string."""
+        return json.dumps(self._state, indent=2, default=str)
+
+    # --- Methodology progress ---
+
+    def get_methodology_progress(self, name: str) -> dict:
+        """Get progress for a specific methodology."""
+        return self._state.setdefault("methodology_progress", {}).get(name, {})
+
+    def start_methodology(self, name: str):
+        """Initialize tracking for a methodology."""
+        progress = self._state.setdefault("methodology_progress", {})
+        if name not in progress:
+            progress[name] = {"started_at": datetime.now(timezone.utc).isoformat(), "completed_steps": []}
+            self._save_state()
+
+    def complete_methodology_step(self, name: str, step_id: str):
+        """Mark a methodology step as complete."""
+        progress = self._state.setdefault("methodology_progress", {})
+        if name not in progress:
+            progress[name] = {"started_at": datetime.now(timezone.utc).isoformat(), "completed_steps": []}
+        if step_id not in progress[name]["completed_steps"]:
+            progress[name]["completed_steps"].append(step_id)
+            self._save_state()
+
+    def refresh_notes(self) -> Path | None:
+        """Regenerate notes.md with current state data."""
+        if self._workspace is None:
+            return None
+        notes_file = self._workspace / "notes.md"
+        ports = self._state.get("ports", [])
+        users = self._state.get("users", [])
+        creds = self._state.get("credentials", [])
+        hashes = self._state.get("hashes", [])
+        notes = self._state.get("notes", [])
+        flags = self._state.get("flags", {})
+
+        port_rows = ""
+        for p in ports:
+            if p.get("state") == "open":
+                port_rows += f"| {p['port']} | {p.get('service','')} | {p.get('version','')} | |\n"
+
+        cred_rows = ""
+        for c in creds:
+            cred_rows += f"| {c['username']} | {c['password']} | {c.get('service','')} | |\n"
+        for h in hashes:
+            cred_rows += f"| {h.get('username','')} | {h['hash'][:40]}... | hash | |\n"
+
+        notes_text = ""
+        for n in notes:
+            notes_text += f"- [{n.get('timestamp','')[:19]}] {n['note']}\n"
+
+        content = f"""# Target: {self._state.get('target', '')}
+## Date: {self._state.get('created_at', '')[:10]}
+
+## Summary
+- **IP:** {self._state.get('ip', '')}
+- **OS:** {self._state.get('os', 'Unknown')}
+- **Hostname:** {self._state.get('hostname', '')}
+- **Domain:** {self._state.get('domain', '')}
+
+## Recon
+
+### Service Enumeration
+| Port | Service | Version | Notes |
+|------|---------|---------|-------|
+{port_rows}
+## Users ({len(users)})
+{chr(10).join(f'- {u}' for u in users) if users else '(none yet)'}
+
+## Initial Foothold
+- **Vulnerability:**
+- **Exploit/Method:**
+- **Proof:**
+
+## Privilege Escalation
+- **Vector:**
+- **Method:**
+- **Proof:**
+
+## Flags
+- **local.txt:** {flags.get('local_txt', '')}
+- **proof.txt:** {flags.get('proof_txt', '')}
+
+## Credentials Found
+| Username | Password/Hash | Service | Notes |
+|----------|---------------|---------|-------|
+{cred_rows}
+## Notes
+{notes_text if notes_text else '(none yet)'}
+"""
+        notes_file.write_text(content, encoding="utf-8")
+        return notes_file
+
+
+# Global singleton
+state_manager = StateManager()

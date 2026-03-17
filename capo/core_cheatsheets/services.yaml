@@ -1,0 +1,165 @@
+category: "services"
+description: "Common service enumeration (FTP, SSH, DNS, SMTP, etc.)"
+commands:
+  - name: "ftp-anonymous"
+    description: "Check FTP anonymous login"
+    command: "ftp {IP} # login as anonymous:anonymous"
+    tool: "ftp"
+    tags: ["ftp", "anonymous", "enum"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "ftp-nmap-scripts"
+    description: "FTP NSE script enumeration"
+    command: "nmap --script ftp-anon,ftp-bounce,ftp-syst,ftp-vsftpd-backdoor -p 21 {IP}"
+    tool: "nmap"
+    tags: ["ftp", "nmap", "enum"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "ssh-brute-hydra"
+    description: "SSH brute force with Hydra"
+    command: "hydra -l {USER} -P /usr/share/wordlists/rockyou.txt ssh://{IP} -t 4"
+    tool: "hydra"
+    tags: ["ssh", "brute", "hydra"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+    notes: "Use -t 4 to limit threads (SSH rate limiting)"
+
+  - name: "ssh-id-rsa"
+    description: "SSH login with private key"
+    command: "chmod 600 id_rsa; ssh -i id_rsa {USER}@{IP}"
+    tool: "ssh"
+    tags: ["ssh", "key", "login"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "dns-zone-transfer"
+    description: "DNS zone transfer attempt"
+    command: "dig axfr @{IP} {DOMAIN}"
+    tool: "dig"
+    tags: ["dns", "zone", "transfer"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "dns-enum"
+    description: "DNS enumeration with dig"
+    command: "dig any {DOMAIN} @{IP}"
+    tool: "dig"
+    tags: ["dns", "enum"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "smtp-user-enum"
+    description: "SMTP user enumeration"
+    command: "smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt -t {IP}"
+    tool: "smtp-user-enum"
+    tags: ["smtp", "users", "enum"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "snmp-walk"
+    description: "SNMP walk with default community strings"
+    command: "snmpwalk -v2c -c public {IP}"
+    tool: "snmpwalk"
+    tags: ["snmp", "enum", "walk"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "snmp-brute"
+    description: "SNMP community string brute force"
+    command: "onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt {IP}"
+    tool: "onesixtyone"
+    tags: ["snmp", "brute"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "nfs-showmount"
+    description: "Show NFS exports"
+    command: "showmount -e {IP}"
+    tool: "showmount"
+    tags: ["nfs", "enum", "mount"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "nfs-mount"
+    description: "Mount NFS share"
+    command: "mkdir /mnt/nfs; mount -t nfs {IP}:/share /mnt/nfs -o nolock"
+    tool: "mount"
+    tags: ["nfs", "mount"]
+    os: "linux"
+    exam: ["oscp", "cpts"]
+
+  - name: "mssql-impacket"
+    description: "MSSQL client with Impacket"
+    command: "impacket-mssqlclient {DOMAIN}/{USER}:{PASSWORD}@{IP} -windows-auth"
+    tool: "impacket"
+    tags: ["mssql", "database", "shell"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+    notes: "Once in: enable_xp_cmdshell, xp_cmdshell 'whoami'"
+
+  - name: "mysql-connect"
+    description: "MySQL remote connection"
+    command: "mysql -h {IP} -u {USER} -p"
+    tool: "mysql"
+    tags: ["mysql", "database"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "redis-cli"
+    description: "Redis CLI connection"
+    command: "redis-cli -h {IP}"
+    tool: "redis-cli"
+    tags: ["redis", "database"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+    notes: "Try: INFO, CONFIG GET *, keys *"
+
+  - name: "rpcbind-enum"
+    description: "RPC enumeration"
+    command: "rpcinfo -p {IP}"
+    tool: "rpcinfo"
+    tags: ["rpc", "enum"]
+    os: "any"
+    exam: ["oscp", "cpts"]
+
+  - name: "sqlcmd-connect"
+    description: "Connect to MSSQL using sqlcmd"
+    command: "sqlcmd -S {IP} -U {USER} -P {PASSWORD}"
+    tool: "sqlcmd"
+    tags: ["sql", "mssql", "database"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "ftp-nmap-vuln"
+    description: "Nmap FTP vulnerability scan"
+    command: "nmap -sV -p 21 --script ftp-* {IP}"
+    tool: "nmap"
+    tags: ["ftp", "nmap", "vuln"]
+    os: "any"
+    exam: ["cpts"]
+
+  - name: "smb-psexec"
+    description: "Impacket PsExec shell"
+    command: "impacket-psexec {DOMAIN}/{USER}:{PASSWORD}@{IP}"
+    tool: "impacket-psexec"
+    tags: ["smb", "shell", "psexec"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "rdp-nmap-enum"
+    description: "Nmap RDP vulnerability and enum scan"
+    command: "nmap -sV --script rdp-enum-encryption,rdp-vuln-ms12-020 {IP} -p 3389"
+    tool: "nmap"
+    tags: ["rdp", "nmap", "enum"]
+    os: "windows"
+    exam: ["cpts"]
+
+  - name: "rdp-medusa-brute"
+    description: "Bruteforce RDP using Medusa"
+    command: "medusa -u {USER} -P {PASS_FILE} -h {IP} -M rdp"
+    tool: "medusa"
+    tags: ["rdp", "brute"]
+    os: "windows"
+    exam: ["oscp", "cpts"]

