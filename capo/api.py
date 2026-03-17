@@ -7,13 +7,17 @@ from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from capo import config
 from capo.campaign import CampaignManager
 from capo.state import StateManager
 
-app = FastAPI(title="Capo State API", description="API to access Capo configuration and current state")
+_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+
+app = FastAPI(title="Capo Studio API", description="C.A.P.O Studio — state, suggestions, and cheatsheet management")
 
 app.add_middleware(
     CORSMiddleware,
@@ -337,6 +341,17 @@ def save_custom_triggers(triggers: dict):
     )
     config.CUSTOM_TRIGGERS_FILE.write_text(content, encoding="utf-8")
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Frontend static file serving
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+def serve_index():
+    return FileResponse(_FRONTEND_DIR / "index.html")
+
+app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="frontend")
 
 
 if __name__ == "__main__":

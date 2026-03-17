@@ -15,7 +15,7 @@ def studio(
     console.print(f"[bold green]Starting Capo Studio on http://{host}:{port}...[/bold green]")
     try:
         subprocess.run(
-            ["uvicorn", "capo.studio.api:app", "--host", host, "--port", str(port)],
+            ["uvicorn", "capo.api:app", "--host", host, "--port", str(port)],
             check=True
         )
     except KeyboardInterrupt:

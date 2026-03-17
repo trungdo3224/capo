@@ -122,7 +122,6 @@ commands:
     tags: ["transfer", "scp", "ssh", "upload"]
     os: "linux"
     exam: ["oscp", "cpts"]
-    exam: ["oscp", "cpts"]
 
   - name: "transfer-scp"
     description: "SCP file transfer"

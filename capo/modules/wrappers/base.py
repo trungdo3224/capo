@@ -10,6 +10,7 @@ Every tool wrapper inherits from this base and provides:
 import shlex
 import shutil
 import subprocess
+import threading
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
@@ -99,13 +100,17 @@ class BaseWrapper(ABC):
 
     def execute(self, cmd_args: list[str], output_file: Path | None = None,
                 parse_output: bool = True, timeout: int = 0,
-                dry_run: bool = False) -> subprocess.CompletedProcess | None:
+                dry_run: bool = False,
+                stream_output: bool = False) -> subprocess.CompletedProcess | None:
         """Execute a command with transparency and logging.
 
         1. Prints the full command (OSCP compliance)
         2. Runs the command (unless dry_run=True)
         3. Saves raw output
         4. Optionally parses and updates state
+
+        When stream_output=True, stdout/stderr are printed in real-time
+        instead of buffered (useful for long-running tools like nmap).
 
         Raises TargetError if no target is set.
         Raises ToolNotFoundError if the binary is not in PATH.
@@ -123,20 +128,25 @@ class BaseWrapper(ABC):
             return None
 
         try:
-            kwargs: dict[str, Any] = {
-                "capture_output": True,
-                "text": True,
-            }
-            if timeout > 0:
-                kwargs["timeout"] = timeout
-
             t0 = time.monotonic()
-            with Status(
-                f"[bold cyan]Running {self.tool_name}...[/bold cyan]",
-                console=console,
-                spinner="dots",
-            ):
-                result = subprocess.run(cmd_args, **kwargs)  # noqa: S603
+
+            if stream_output:
+                result = self._execute_streaming(cmd_args, timeout)
+            else:
+                kwargs: dict[str, Any] = {
+                    "capture_output": True,
+                    "text": True,
+                }
+                if timeout > 0:
+                    kwargs["timeout"] = timeout
+
+                with Status(
+                    f"[bold cyan]Running {self.tool_name}...[/bold cyan]",
+                    console=console,
+                    spinner="dots",
+                ):
+                    result = subprocess.run(cmd_args, **kwargs)  # noqa: S603
+
             elapsed = time.monotonic() - t0
 
             # Save raw output
@@ -180,6 +190,48 @@ class BaseWrapper(ABC):
         except FileNotFoundError:
             print_error(f"{self.binary_name} binary not found")
             return None
+
+    def _execute_streaming(self, cmd_args: list[str], timeout: int) -> subprocess.CompletedProcess:
+        """Run a command and print stdout/stderr lines as they arrive."""
+        stdout_chunks: list[str] = []
+        stderr_chunks: list[str] = []
+
+        def _reader(stream, chunks, style: str = ""):
+            for line in iter(stream.readline, ""):
+                chunks.append(line)
+                text = line.rstrip()
+                if text:
+                    console.print(text if not style else f"[{style}]{text}[/{style}]")
+            stream.close()
+
+        proc = subprocess.Popen(  # noqa: S603
+            cmd_args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+
+        t_out = threading.Thread(target=_reader, args=(proc.stdout, stdout_chunks))
+        t_err = threading.Thread(target=_reader, args=(proc.stderr, stderr_chunks, "dim red"))
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=timeout if timeout > 0 else None)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            raise
+        finally:
+            t_out.join()
+            t_err.join()
+
+        return subprocess.CompletedProcess(
+            args=cmd_args,
+            returncode=proc.returncode,
+            stdout="".join(stdout_chunks),
+            stderr="".join(stderr_chunks),
+        )
 
     @abstractmethod
     def parse_output(self, result: subprocess.CompletedProcess, output_file: Path | None):

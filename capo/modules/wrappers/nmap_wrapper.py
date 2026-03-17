@@ -25,12 +25,13 @@ class NmapWrapper(BaseWrapper):
         cmd = [
             "nmap", "-Pn", "-p-", "--open",
             "--min-rate", str(rate),
+            "--stats-every", "15s",
             timing,
             "-oX", str(xml_out),
             "-oN", str(out.with_suffix(".nmap")),
             target,
         ]
-        self.execute(cmd, output_file=out.with_suffix(".txt"))
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
 
     def detailed_scan(self, ports: str | None = None, target: str | None = None):
         """Detailed scan with -sC -sV on discovered ports."""
@@ -49,12 +50,13 @@ class NmapWrapper(BaseWrapper):
         cmd = [
             "nmap", "-Pn", "-sC", "-sV",
             "-p", ports,
+            "--stats-every", "15s",
             timing,
             "-oX", str(xml_out),
             "-oN", str(out.with_suffix(".nmap")),
             target,
         ]
-        self.execute(cmd, output_file=out.with_suffix(".txt"))
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
 
     def udp_scan(self, target: str | None = None):
         """UDP top ports scan."""
@@ -67,12 +69,13 @@ class NmapWrapper(BaseWrapper):
             "nmap", "-Pn", "-sU",
             "--top-ports", "50",
             "--open",
+            "--stats-every", "15s",
             timing,
             "-oX", str(xml_out),
             "-oN", str(out.with_suffix(".nmap")),
             target,
         ]
-        self.execute(cmd, output_file=out.with_suffix(".txt"))
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
 
     def vuln_scan(self, ports: str | None = None, target: str | None = None):
         """Run vuln NSE scripts (OSCP-safe)."""
@@ -90,11 +93,12 @@ class NmapWrapper(BaseWrapper):
         cmd = [
             "nmap", "-Pn", "--script", "vuln",
             "-p", ports,
+            "--stats-every", "15s",
             "-oX", str(xml_out),
             "-oN", str(out.with_suffix(".nmap")),
             target,
         ]
-        self.execute(cmd, output_file=out.with_suffix(".txt"))
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
 
     def parse_output(self, result: subprocess.CompletedProcess, output_file: Path | None):
         """Parse Nmap XML output and update state."""
@@ -179,6 +183,117 @@ class NmapWrapper(BaseWrapper):
         ports = state_manager.get("ports", [])
         if ports:
             print_ports_table(ports)
+
+    def custom_scan(self, extra_args: str, target: str | None = None):
+        """Run a custom nmap scan with user-supplied flags. XML output is still parsed into state."""
+        import shlex as _shlex
+        target = target or state_manager.target
+        out = self._output_file("custom")
+        xml_out = out.with_suffix(".xml")
+
+        try:
+            parsed_args = _shlex.split(extra_args)
+        except ValueError as e:
+            print_warning(f"Invalid nmap args: {e}")
+            return
+
+        # Remove any existing -oX/-oN flags the user may have added to avoid conflicts
+        filtered = []
+        skip_next = False
+        for tok in parsed_args:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in ("-oX", "-oN", "-oA", "-oG", "-oS"):
+                skip_next = True
+                continue
+            # Also handle combined form like -oX<file>
+            if any(tok.startswith(f) for f in ("-oX", "-oN", "-oA", "-oG", "-oS")):
+                continue
+            filtered.append(tok)
+
+        # Remove target if user accidentally included it (we append it ourselves)
+        if filtered and filtered[-1] == target:
+            filtered = filtered[:-1]
+
+        # Add --stats-every unless the user already included it
+        if "--stats-every" not in filtered:
+            filtered = ["--stats-every", "15s"] + filtered
+
+        cmd = [
+            "nmap", "-Pn",
+            *filtered,
+            "-oX", str(xml_out),
+            "-oN", str(out.with_suffix(".nmap")),
+            target,
+        ]
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
+
+    def ports_scan(self, ports: str, target: str | None = None,
+                   run_scripts: bool = True, detect_versions: bool = True):
+        """Scan a specific port list with optional version/script detection."""
+        target = target or state_manager.target
+        out = self._output_file("ports")
+        xml_out = out.with_suffix(".xml")
+        timing = self.profile_config["nmap_timing"]
+
+        flags = ["-Pn"]
+        if run_scripts:
+            flags.append("-sC")
+        if detect_versions:
+            flags.append("-sV")
+
+        cmd = [
+            "nmap", *flags,
+            "-p", ports,
+            "--stats-every", "15s",
+            timing,
+            "-oX", str(xml_out),
+            "-oN", str(out.with_suffix(".nmap")),
+            target,
+        ]
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
+
+    def os_scan(self, target: str | None = None):
+        """OS detection scan (-O). Best run as root."""
+        target = target or state_manager.target
+        out = self._output_file("os")
+        xml_out = out.with_suffix(".xml")
+        timing = self.profile_config["nmap_timing"]
+
+        cmd = [
+            "nmap", "-Pn", "-O", "--osscan-guess",
+            "--stats-every", "15s",
+            timing,
+            "-oX", str(xml_out),
+            "-oN", str(out.with_suffix(".nmap")),
+            target,
+        ]
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
+
+    def scripts_scan(self, scripts: str, ports: str | None = None, target: str | None = None):
+        """Run specific NSE scripts. Falls back to all open ports if none supplied."""
+        target = target or state_manager.target
+        if ports is None:
+            open_ports = state_manager.get_open_ports()
+            if not open_ports:
+                print_warning("No open ports in state. Specify --ports or run quick scan first.")
+                return
+            ports = ",".join(str(p) for p in open_ports)
+
+        out = self._output_file("scripts")
+        xml_out = out.with_suffix(".xml")
+
+        cmd = [
+            "nmap", "-Pn",
+            "--script", scripts,
+            "-p", ports,
+            "--stats-every", "15s",
+            "-oX", str(xml_out),
+            "-oN", str(out.with_suffix(".nmap")),
+            target,
+        ]
+        self.execute(cmd, output_file=out.with_suffix(".txt"), stream_output=True)
 
     def get_suggestions(self) -> list[tuple[str, str]]:
         """Return suggestions based on discovered services."""

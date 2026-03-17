@@ -1,0 +1,402 @@
+/* ─── Design System: Precision Utility Dark ─── */
+:root {
+  /* New token set */
+  --bg:            #08080b;
+  --surface:       #0e0e13;
+  --surface-hover: #14141b;
+  --border:        #1c1c26;
+  --border-dim:    #141419;
+
+  --text:          #dcdce6;
+  --text-muted:    #5e5e72;
+  --text-dim:      #36364a;
+
+  --accent:        #22d3ee;
+  --accent-hover:  #0ea5e9;
+  --accent-dim:    rgba(34, 211, 238, 0.07);
+
+  --green:  #34d399;
+  --red:    #f87171;
+  --amber:  #fbbf24;
+  --purple: #a78bfa;
+
+  /* Legacy aliases — used by inline styles throughout the HTML */
+  --capo-cyan:       var(--accent);
+  --capo-cyan-hover: var(--accent-hover);
+  --capo-bg:         var(--bg);
+  --capo-surface:    var(--surface);
+  --capo-surface-hl: var(--surface-hover);
+  --capo-border:     var(--border);
+  --capo-text:       var(--text);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'DM Sans', -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+
+.capo-font { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+/* ── Sidebar ── */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  min-height: 100vh;
+  padding: 1.5rem 1.125rem;
+}
+
+.logo-container { margin-bottom: 2.25rem; cursor: pointer; }
+
+.logo-text {
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.1em;
+  line-height: 1.25;
+}
+
+.logo-text small {
+  display: block;
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  letter-spacing: 0.22em;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  text-transform: uppercase;
+}
+
+/* ── Nav ── */
+.nav-pills .nav-link {
+  color: var(--text-muted);
+  border-radius: 4px;
+  margin-bottom: 1px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  transition: color 0.12s, background 0.12s;
+  cursor: pointer;
+  letter-spacing: 0.01em;
+}
+
+.nav-pills .nav-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.nav-pills .nav-link.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* ── Cards ── */
+.capo-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin-bottom: 0.875rem;
+  overflow: hidden;
+}
+
+.capo-card-header {
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  padding: 0.7rem 1.125rem;
+  border-radius: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ── File cards ── */
+.file-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1.375rem 1.125rem;
+  transition: border-color 0.12s, background 0.12s;
+  cursor: pointer;
+  height: 100%;
+}
+
+.file-card:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
+.file-icon {
+  font-size: 1.625rem;
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+  transition: color 0.12s;
+}
+
+.file-card:hover .file-icon { color: var(--accent); }
+
+/* ── Forms ── */
+.form-control,
+.form-select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  font-size: 0.8125rem;
+  transition: border-color 0.12s;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background: var(--bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+  color: var(--text);
+}
+
+.form-control::placeholder { color: var(--text-dim); }
+
+.cmd-input {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 0.79rem !important;
+  color: var(--green) !important;
+  background: #020205 !important;
+}
+
+/* ── Buttons ── */
+.btn-capo {
+  background: var(--accent);
+  color: #000;
+  font-weight: 600;
+  font-size: 0.79rem;
+  border: none;
+  padding: 0.375rem 0.9rem;
+  border-radius: 4px;
+  transition: background 0.12s;
+  letter-spacing: 0.01em;
+}
+
+.btn-capo:hover { background: var(--accent-hover); color: #000; }
+
+.btn-capo-outline {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid rgba(34, 211, 238, 0.28);
+  font-size: 0.79rem;
+  border-radius: 4px;
+  padding: 0.375rem 0.9rem;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.btn-capo-outline:hover {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: rgba(34, 211, 238, 0.55);
+}
+
+.btn-sm { font-size: 0.775rem !important; padding: 0.275rem 0.65rem !important; }
+
+/* ── Toast ── */
+.toast-container { z-index: 1055; }
+
+.toast {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.8125rem;
+}
+
+.toast-header {
+  background: var(--surface-hover);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.79rem;
+}
+
+/* ── Suggestion cards ── */
+.suggestion-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  margin-bottom: 0.5rem;
+  overflow: hidden;
+}
+
+.suggestion-card.priority-p1  { border-left: 2px solid var(--red); }
+.suggestion-card.priority-p2  { border-left: 2px solid var(--amber); }
+.suggestion-card.priority-p3  { border-left: 2px solid var(--text-dim); }
+.suggestion-card.priority-port { border-left: 2px solid var(--accent); }
+.suggestion-card.priority-ctx  { border-left: 2px solid var(--purple); }
+
+.cmd-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.775rem;
+  color: var(--green);
+  background: #020205;
+  padding: 0.3rem 0.7rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.1s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.cmd-line:hover { background: #06060c; }
+.cmd-line .copy-icon { color: var(--text-dim); font-size: 0.68rem; flex-shrink: 0; }
+
+/* ── Badges ── */
+.badge-p1 { background: rgba(248, 113, 113, 0.1); color: var(--red);    border: 1px solid rgba(248,113,113,0.25); }
+.badge-p2 { background: rgba(251, 191, 36,  0.1); color: var(--amber);  border: 1px solid rgba(251,191,36,0.25); }
+.badge-p3 { background: rgba(54,  54,  74,  0.4); color: var(--text-muted); border: 1px solid var(--border); }
+
+/* ── Status dot ── */
+.pulse-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+  display: inline-block;
+  animation: pulse 2.5s infinite;
+}
+
+.pulse-dot.inactive { background: var(--text-dim); animation: none; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.35; transform: scale(1.35); }
+}
+
+/* ── History ── */
+.history-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.history-row:last-child { border-bottom: none; }
+
+.history-tool {
+  min-width: 5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.history-cmd {
+  font-size: 0.74rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--green);
+  flex: 1;
+  word-break: break-all;
+}
+
+.history-time {
+  font-size: 0.67rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+/* ── Transitions ── */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ── Bootstrap overrides ── */
+.breadcrumb-item + .breadcrumb-item::before { color: var(--text-dim); }
+.breadcrumb-item.active { color: var(--text-muted); }
+
+.spinner-border {
+  border-color: var(--border);
+  border-top-color: var(--accent);
+  width: 1.5rem;
+  height: 1.5rem;
+  border-width: 2px;
+}
+
+.bg-dark    { background: var(--bg) !important; }
+.bg-success { background: rgba(52, 211, 153, 0.12) !important; color: var(--green) !important; }
+.bg-danger  { background: rgba(248, 113, 113, 0.1) !important; }
+
+.border-secondary { border-color: var(--border) !important; }
+.border-danger    { border-color: rgba(248, 113, 113, 0.3) !important; }
+
+.text-white     { color: var(--text) !important; }
+.text-muted     { color: var(--text-muted) !important; }
+.text-info      { color: var(--accent) !important; }
+.text-danger    { color: var(--red) !important; }
+.text-success   { color: var(--green) !important; }
+.text-warning   { color: var(--amber) !important; }
+.text-secondary { color: var(--text-muted) !important; }
+
+.badge {
+  font-size: 0.67rem;
+  font-weight: 500;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+}
+
+.badge.rounded-pill { border-radius: 999px; }
+
+.input-group-text {
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+
+.form-label {
+  font-size: 0.675rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 0.35rem;
+}
+
+hr { border-color: var(--border); opacity: 1; }
+
+pre { margin: 0; }
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.8em; }
+
+/* Sidebar footer */
+.border-top { border-color: var(--border) !important; }
+
+h2, h4, h5, h6 { font-weight: 500; letter-spacing: -0.01em; }
+h2 { font-size: 1.125rem; }
+h4 { font-size: 1rem; }
+h5 { font-size: 0.9375rem; }
+h6 { font-size: 0.8125rem; }
+
+.fw-bold { font-weight: 600 !important; }
+
+/* ── Badge color utilities ── */
+.badge-accent  { background: rgba(34, 211, 238, 0.15); color: var(--accent); }
+.badge-purple  { background: rgba(167, 139, 250, 0.15); color: var(--purple); }
+.badge-red     { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+.badge-green   { background: rgba(52,  211, 153, 0.12); color: var(--green); }
+.badge-amber   { background: rgba(251, 191,  36, 0.15); color: var(--amber); }
+
+/* Port badge inside suggestion cards */
+.port-badge { background: rgba(34, 211, 238, 0.15); color: var(--accent); }
+
+/* Section count pill badges */
+.count-badge        { background: rgba(34,  211, 238, 0.1);  color: var(--accent);  font-size: 0.7rem; }
+.count-badge-purple { background: rgba(167, 139, 250, 0.15); color: var(--purple);  font-size: 0.7rem; }
+.count-badge-red    { background: rgba(248, 113, 113, 0.15); color: var(--red);     font-size: 0.7rem; }
+
+/* Sidebar nav badge */
+.nav-badge { background: rgba(34, 211, 238, 0.2); color: var(--accent); font-size: 0.65rem; }

@@ -67,6 +67,68 @@ def scan_vuln(
     nmap.vuln_scan(ports, target)
 
 
+@scan_app.command("custom")
+def scan_custom(
+    target: str | None = typer.Argument(None, help="Target IP (uses current if not set)"),
+    nmap_args: str = typer.Option(..., "--args", "-a", help="Custom nmap flags, e.g. '-p 80,443 -sC -sV'"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+):
+    """Custom nmap scan — pass any nmap flags while results still parse into state."""
+    ensure_target(target)
+    from capo.modules.triggers import check_triggers
+    from capo.modules.wrappers.nmap_wrapper import NmapWrapper
+    nmap = NmapWrapper(dry_run=dry_run)
+    nmap.custom_scan(nmap_args, target)
+    if not dry_run:
+        check_triggers()
+
+
+@scan_app.command("ports")
+def scan_ports(
+    ports: str = typer.Argument(..., help="Port list to scan, e.g. '80,443,8080-8090'"),
+    target: str | None = typer.Option(None, "--target", "-t", help="Target IP (uses current if not set)"),
+    profile: str = typer.Option("normal", "--profile", help="Scan profile: aggressive/normal/stealth"),
+    no_scripts: bool = typer.Option(False, "--no-scripts", help="Skip default NSE scripts (-sC)"),
+    no_versions: bool = typer.Option(False, "--no-versions", help="Skip version detection (-sV)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+):
+    """Scan a specific port list with version/script detection — no prior quick scan required."""
+    ensure_target(target)
+    from capo.modules.triggers import check_triggers
+    from capo.modules.wrappers.nmap_wrapper import NmapWrapper
+    nmap = NmapWrapper(profile=profile, dry_run=dry_run)
+    nmap.ports_scan(ports, target, run_scripts=not no_scripts, detect_versions=not no_versions)
+    if not dry_run:
+        check_triggers()
+
+
+@scan_app.command("os")
+def scan_os(
+    target: str | None = typer.Argument(None, help="Target IP (uses current if not set)"),
+    profile: str = typer.Option("normal", "--profile", help="Scan profile"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+):
+    """OS detection scan (-O --osscan-guess). Best run as root."""
+    ensure_target(target)
+    from capo.modules.wrappers.nmap_wrapper import NmapWrapper
+    nmap = NmapWrapper(profile=profile, dry_run=dry_run)
+    nmap.os_scan(target)
+
+
+@scan_app.command("scripts")
+def scan_scripts(
+    scripts: str = typer.Argument(..., help="NSE scripts, e.g. 'smb-vuln-ms17-010,http-title'"),
+    ports: str | None = typer.Option(None, "--ports", "-p", help="Ports (uses discovered open ports if not set)"),
+    target: str | None = typer.Option(None, "--target", "-t", help="Target IP (uses current if not set)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+):
+    """Run specific NSE scripts against discovered or specified ports."""
+    ensure_target(target)
+    from capo.modules.wrappers.nmap_wrapper import NmapWrapper
+    nmap = NmapWrapper(dry_run=dry_run)
+    nmap.scripts_scan(scripts, ports, target)
+
+
 @scan_app.command("full")
 def scan_full(
     target: str | None = typer.Argument(None, help="Target IP"),
