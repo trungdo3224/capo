@@ -1,6 +1,6 @@
 # C.A.P.O Cheatsheet (Context-Aware Pentest Orchestrator)
 
-## 🚀 Workflow Basics
+## Workflow Basics
 
 **1. Start a New Engagement**
 ```bash
@@ -21,6 +21,9 @@ capo scan quick
 
 # Run default Nmap scripts on discovered ports
 capo scan detailed
+
+# Or run the full pipeline: quick -> detailed -> triggers
+capo scan full
 ```
 
 **3. Web Enumeration**
@@ -36,6 +39,9 @@ capo web vhost --domain example.com
 
 # DNS subdomain enumeration
 capo web subdns --domain example.com
+
+# Recursive directory scan
+capo web recursive --depth 2
 ```
 
 **4. Password Brute Force (Hydra)**
@@ -54,11 +60,14 @@ capo brute http-post --form '/login.php:username=^USER^&password=^PASS^:F=Invali
 ```bash
 # See what ports/creds/users have been found
 capo state show
+
+# Get context-aware next steps
+capo suggest
 ```
 
 ---
 
-## 🎯 Target Management (`capo target`)
+## Target Management (`capo target`)
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
@@ -73,30 +82,33 @@ capo state show
 | `add-cred` | Manually add credentials | `capo target add-cred svc_sql P@ssword!` |
 | `add-hash` | Manually add a hash | `capo target add-hash $krb5tgs$...` |
 
-## 🔍 Scanning (`capo scan`)
+## Scanning (`capo scan`)
 
 | Command | Description |
 | :--- | :--- |
-| `quick` | **Phase 1**: Quick syn scan of all 65535 TCP ports. Updates state with open ports. |
+| `quick` | **Phase 1**: Quick SYN scan of all 65535 TCP ports. Updates state with open ports. |
 | `detailed` | **Phase 2**: Runs `nmap -sC -sV` only on ports found in the `quick` scan. |
-| `full` | Runs `quick` -> `detailed` -> `triggers` in one go. |
+| `full` | Runs `quick` -> `detailed` -> triggers in one go. |
 | `udp` | Scans top UDP ports. |
 | `vuln` | Runs safe NSE vulnerability scripts (OSCP-safe). |
 
-## 🌐 Web Enumeration (`capo web`)
+```bash
+capo scan quick --profile aggressive   # Lab/CTF speed
+capo scan quick --profile stealth      # Fragile targets
+```
 
-*Note: All commands pull `{IP}` and `{DOMAIN}` from state automatically.*
+## Web Enumeration (`capo web`)
+
+*All commands pull `{IP}` and `{DOMAIN}` from state automatically.*
 
 | Command | Description | Parameters |
 | :--- | :--- | :--- |
-| `fuzz` | Directory fuzzing with `ffuf`. | `--host ip\|domain`<br>`-d` (domain/subdomain host)<br>`--ext php,txt` (extensions)<br>`-w` (custom wordlist) |
-| `vhost` | Virtual host discovery. | `-d` (base domain)<br>`-w` (custom wordlist) |
-| `subdns` | DNS subdomain enumeration (`gobuster dns` with ffuf fallback). | `-d` (base domain)<br>`-w` (custom wordlist)<br>`-r` (custom resolver) |
+| `fuzz` | Directory fuzzing with `ffuf`. | `--host ip\|domain`, `-d` (domain), `--ext php,txt`, `-w` (wordlist) |
+| `vhost` | Virtual host discovery. | `-d` (base domain), `-w` (wordlist) |
+| `subdns` | DNS subdomain enumeration. | `-d` (base domain), `-w` (wordlist), `-r` (resolver) |
 | `recursive` | Recursive directory scan. | `--depth 2` |
 
-### 🔓 If `.git` directory is found
-
-When `capo suggest` / `capo web fuzz` output mentions an exposed `.git`, follow this runbook:
+### If `.git` directory is found
 
 ```bash
 # 1. Confirm exposure
@@ -104,40 +116,40 @@ curl -s http://{IP}/.git/HEAD           # Expect: ref: refs/heads/...
 curl -s http://{IP}/.git/config         # Contains remote URL + branch
 
 # 2. Dump the repository
-git-dumper http://{IP}/.git/ ./git-dump # Preferred (pip install git-dumper)
-# Fallback if git-dumper unavailable:
+git-dumper http://{IP}/.git/ ./git-dump
+# Fallback:
 wget --mirror -I .git http://{IP}/.git/ -P ./git-dump-wget
 
 # 3. Review history
-git -C ./git-dump log --oneline --all   # Browse all commits
-git -C ./git-dump show {COMMIT_HASH}    # Inspect specific commit diff
-git -C ./git-dump stash show -p         # Check stashed WIP changes
+git -C ./git-dump log --oneline --all
+git -C ./git-dump show {COMMIT_HASH}
+git -C ./git-dump stash show -p
 
 # 4. Hunt for secrets
 grep -rEil 'password|secret|api.?key|token|private.?key' ./git-dump
-trufflehog filesystem ./git-dump        # Automated scanner
-# Alternative:
+trufflehog filesystem ./git-dump
 gitleaks detect -s ./git-dump --no-git
 ```
 
 > **Cheatsheet shortcut:** `capo query git-detect` / `capo query git-dump` / `capo query git-grep-secrets`
 
-## ⚔️ NetExec / SMB (`capo nxc`)
+## NetExec / SMB (`capo nxc`)
 
-Wrappers for NetExec (CrackMapExec) that update the shared state.
+Wrappers for NetExec (CrackMapExec). All results update shared state.
 
 | Command | Description |
 | :--- | :--- |
 | `null` | Test for SMB Null Session. |
 | `guest` | Test for SMB Guest Session. |
-| `shares` | List SMB shares. (Uses creds from triggers if not provided) |
+| `shares` | List SMB shares. (Uses creds from state if not provided) |
 | `users` | Enumerate domain users via SMB/LDAP. |
 | `pass-pol` | Get password policy. |
 | `rid-brute` | RID Cycling to find users. |
+| `ldap-enum` | LDAP enumeration (users, groups, trusts). |
 | `spray` | Password spray a userlist. |
 | `winrm` | Check for WinRM access. |
 
-## 🔐 Bruteforce (`capo brute`)
+## Bruteforce (`capo brute`)
 
 Hydra wrappers for SSH and web authentication forms.
 
@@ -148,7 +160,7 @@ Hydra wrappers for SSH and web authentication forms.
 | `http-get` | Bruteforce HTTP GET login forms. |
 | `web-form` | Generic Hydra web form module (supports custom modules). |
 
-## 🧠 State & Intelligence (`capo state`)
+## State & Intelligence (`capo state`)
 
 The "Brain" of the tool. Tracks everything found so far.
 
@@ -159,31 +171,97 @@ The "Brain" of the tool. Tracks everything found so far.
 | `creds` | List found credentials. |
 | `users` | List found usernames. |
 | `dirs` | List found web directories. |
-| `sync-files` | **Crucial**: Synthesizes target & campaign data into global `users.txt`/`passwords.txt` files for `{USERFILE}` injection. |
+| `history` | Show scan history (tool, command, timestamp, duration). |
+| `workspace` | Show the workspace path for the current target. |
+| `refresh-notes` | Regenerate `notes.md` from current state. |
+| `sync-files` | Synthesize target + campaign data into `users.txt`/`passwords.txt` for `{USERFILE}` injection. |
 | `export` | Export data to JSON/CSV/Markdown. |
 
-## 📋 Methodologies (`capo methodology`)
+## Methodologies (`capo methodology`)
 
 Interactive checklists that auto-complete based on your findings.
 
 | Command | Description |
 | :--- | :--- |
-| `list` | Show available workflows (e.g., `web-app`, `active-directory`). |
+| `list` | Show available workflows (e.g., `ad_kill_chain`, `web_app`). |
 | `start` | Start a methodology for this target. |
+| `status` | Show current methodology progress. |
 | `next` | Show the next pending steps & commands. |
 | `done` | Mark a step as manually complete. |
 | `auto-check` | Check if any steps can be auto-completed based on new state data. |
 
-## 📚 Knowledge Base
+```bash
+capo methodology start ad_kill_chain
+capo methodology next
+capo methodology done recon
+capo methodology auto-check
+```
+
+## Triggers (`capo triggers`)
+
+Context-aware suggestion engine based on open ports and state.
 
 | Command | Description |
 | :--- | :--- |
-| `search` | Fuzzy search the cheatsheet database. |
-| `query` | Quick lookup for a specific service (e.g., `capo query kerberos`). |
+| `list` | Show all built-in and custom port triggers. |
+| `check` | Manually evaluate triggers for the current target's state. |
+| `init` | Create a `~/.capo/custom_triggers.yaml` template. |
 
-## 📄 Reporting
+## Exam Mode (`capo mode`)
 
 | Command | Description |
 | :--- | :--- |
-| `generate` | Create a markdown/HTML report from the state. |
+| `set oscp` | Strict OSCP mode — disables LLM, enforces Metasploit (1 machine limit). |
+| `set cpts` | CPTS mode — all features enabled including LLM (Phase 4). |
+| `show` | Show current exam mode and active restrictions. |
+| `use-msf` | Log a Metasploit usage for OSCP tracking. |
+
+## Knowledge Base
+
+| Command | Description |
+| :--- | :--- |
+| `capo search <term>` | Fuzzy search the cheatsheet database. |
+| `capo query <service>` | Quick lookup for a specific service (e.g., `capo query kerberos`). |
+| `capo categories` | List all available cheatsheet categories. |
+
+```bash
+capo search "asrep roasting" --copy   # Copy first result to clipboard
+capo query smb
+capo query git-dump
+capo categories
+```
+
+## Daemon
+
+```bash
+# Start background watcher — polls state.json every 2s, fires suggestion tables on change
+capo daemon
+```
+
+## Capo Studio (Web UI)
+
+```bash
+# Launch the web UI on http://127.0.0.1:8000
+capo studio
+```
+
+## Reporting
+
+| Command | Description |
+| :--- | :--- |
+| `generate` | Create a Markdown/HTML report from the state. |
 | `timeline` | View the attack timeline. |
+
+## REST API Quick Reference
+
+The local API (`capo.api:app`) is available when the Capo daemon or Studio is running.
+
+| Endpoint | Description |
+| :--- | :--- |
+| `GET /api/engagement/status` | Active target, campaign, and full state |
+| `GET /api/state` | Current target/workspace/campaign context |
+| `GET /api/suggestions` | Context-aware suggestions for current target |
+| `GET /api/cheatsheets` | List all cheatsheet filenames |
+| `GET /api/methodologies` | List all methodology filenames |
+| `GET /api/triggers/custom` | Return custom triggers |
+| `POST /api/triggers/custom` | Save custom triggers |
