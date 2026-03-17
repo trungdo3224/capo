@@ -46,10 +46,12 @@ from capo.cli.triggers_cmds import triggers_app
 from capo.cli.methodology_cmds import methodology_app
 from capo.cli.daemon_cmds import daemon_app
 from capo.cli.studio_cmds import app as studio_app
+from capo.cli.kerberos_cmds import kerberos_app
 
 app.add_typer(target_app, name="target")
 app.add_typer(scan_app, name="scan")
 app.add_typer(nxc_app, name="nxc")
+app.add_typer(kerberos_app, name="kerberos")
 app.add_typer(brute_app, name="brute")
 app.add_typer(web_app, name="web")
 app.add_typer(state_app, name="state")

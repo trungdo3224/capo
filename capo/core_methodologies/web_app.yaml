@@ -49,6 +49,34 @@ steps:
       - "capo web vhost"
       - "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w subdomains.txt -fc 302"
 
+  - id: source-analysis
+    name: "Source Code & Endpoint Analysis"
+    phase: enumeration
+    description: "Analyze page source, JS files, and headers for hidden endpoints, secrets, and leaks"
+    commands:
+      - "curl -s http://{IP} | grep -iE '(password|secret|api.?key|token|auth|config|internal|admin|debug)' # Quick secrets grep in HTML"
+      - "curl -s http://{IP} | grep -oE 'src=\"[^\"]+\\.js[^\"]*\"' | sed 's/src=\"//;s/\"$//' # Extract JS file references"
+      - "curl -s http://{IP}/robots.txt  # Disallowed paths = attack surface"
+      - "curl -s http://{IP}/sitemap.xml | grep '<loc>' | sed 's|<loc>||;s|</loc>||' # All indexed URLs"
+      - "curl -sI http://{IP} | grep -iE '(server|x-powered-by|x-aspnet|set-cookie|access-control|content-security)' # Header analysis"
+      - "# --- JS Endpoint Discovery ---"
+      - "python3 LinkFinder.py -i http://{IP} -d -o /tmp/js_endpoints.txt # Crawl + extract JS endpoints (github: GerbenJavado/LinkFinder)"
+      - "cat /tmp/js_endpoints.txt | grep -vE '\\.(png|jpg|css|woff)' # Filter out assets"
+      - "# --- Secrets in JS ---"
+      - "python3 SecretFinder.py -i http://{IP} -e -o /tmp/secrets.html # Find API keys/tokens in all JS (github: m4ll0k/SecretFinder)"
+      - "trufflehog --only-verified filesystem ./js_files/ # Verify found secrets"
+      - "# --- API discovery ---"
+      - "curl -s http://{IP}/api/docs http://{IP}/swagger.json http://{IP}/openapi.json http://{IP}/api/v1 2>/dev/null | python3 -m json.tool # OpenAPI spec"
+      - "ffuf -u http://{IP}/api/FUZZ -w /usr/share/wordlists/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc 200,201,401,403"
+      - "# --- Wayback / historical URLs ---"
+      - "waybackurls {DOMAIN} | tee /tmp/wayback.txt | grep -E '\\?(.*=)' | sort -u # Historical URLs with params"
+      - "gau {DOMAIN} | grep -E '\\.(js|json|php|asp|aspx)' | sort -u # All known URLs for interesting file types"
+      - "# --- Hidden form fields & comments ---"
+      - "curl -s http://{IP} | grep -oP '(?<=<!--).*?(?=-->)' # HTML comments"
+      - "curl -s http://{IP} | grep -oE 'type=\"hidden\" name=\"[^\"]+\" value=\"[^\"]+\"' # Hidden form fields"
+    check:
+      directories_min: 1
+
   - id: git-exposure
     name: "Git Repository Exposure"
     phase: enumeration

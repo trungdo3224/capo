@@ -45,8 +45,16 @@ def methodology_list(
 
 
 @methodology_app.command("start")
-def methodology_start(name: str = typer.Argument(help="Methodology name")):
-    """Start tracking a methodology workflow for the current target."""
+def methodology_start(
+    name: str = typer.Argument(help="Methodology name"),
+    step_id: str = typer.Argument(None, help="Step ID to show commands for"),
+):
+    """Start a methodology and list its steps, or show commands for a specific step.
+
+    Examples:
+      capo methodology start web-app               # list all step names
+      capo methodology start web-app source-analysis  # show commands for that step
+    """
     if not state_manager.target:
         print_error("No target set.")
         raise typer.Exit(1)
@@ -59,9 +67,22 @@ def methodology_start(name: str = typer.Argument(help="Methodology name")):
         available = ", ".join(methodology_engine.methodologies.keys())
         print_info(f"Available: {available}")
         raise typer.Exit(1)
+
     state_manager.start_methodology(name)
-    print_success(f"Started tracking: {meth.display_name} ({len(meth.steps)} steps)")
-    _show_methodology_next(name)
+
+    if step_id:
+        # Show commands for the requested step
+        step = next((s for s in meth.steps if s.id == step_id), None)
+        if not step:
+            print_error(f"Unknown step: {step_id}")
+            valid = ", ".join(s.id for s in meth.steps)
+            print_info(f"Valid steps: {valid}")
+            raise typer.Exit(1)
+        cmds = [step.inject_variables(c) for c in step.commands]
+        print_suggestion(f"[{step.phase}] {step.name}", cmds)
+    else:
+        # List all step names only
+        _show_methodology_steps(name)
 
 
 @methodology_app.command("status")
@@ -194,6 +215,33 @@ def methodology_auto_check(
                     print_success(f"[{mname}] Auto-completed: {sid}")
         else:
             print_info("No steps auto-completed.")
+
+
+def _show_methodology_steps(name: str):
+    """List all steps in a methodology (names only, no commands)."""
+    from rich.table import Table
+    from capo.modules.methodology import methodology_engine
+
+    methodology_engine.load_all()
+    meth = methodology_engine.get(name)
+    if not meth:
+        print_error(f"Unknown methodology: {name}")
+        return
+
+    completed, _ = methodology_engine.get_progress(name)
+
+    table = Table(show_header=True, header_style="bold", show_lines=False)
+    table.add_column("", width=3)
+    table.add_column("Step ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Phase", style="dim")
+
+    for step in meth.steps:
+        mark = "[green]✓[/green]" if step.id in completed else "[dim]○[/dim]"
+        table.add_row(mark, step.id, step.name, step.phase)
+
+    console.print(f"\n[bold]{meth.display_name}[/bold] — run [cyan]capo methodology start {name} <step-id>[/cyan] to see commands\n")
+    console.print(table)
 
 
 def _show_methodology_next(name: str, limit: int = 3):
