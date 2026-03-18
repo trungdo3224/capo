@@ -47,6 +47,37 @@ class EngagementStatus(BaseModel):
     campaign: Optional[str]
     state: Optional[dict[str, Any]]
 
+class GraphNodeCreate(BaseModel):
+    type: str
+    label: str
+    properties: dict[str, Any] = {}
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+class GraphNodeUpdate(BaseModel):
+    label: Optional[str] = None
+    type: Optional[str] = None
+    properties: Optional[dict[str, Any]] = None
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+class GraphEdgeCreate(BaseModel):
+    source: str
+    target: str
+    label: str = ""
+    relationship: str = "related_to"
+    directed: bool = True
+
+class GraphEdgeUpdate(BaseModel):
+    label: Optional[str] = None
+    relationship: Optional[str] = None
+    directed: Optional[bool] = None
+
+class PositionUpdate(BaseModel):
+    id: str
+    x: float
+    y: float
+
 # ---------------------------------------------------------------------------
 # Helpers: YAML file management (cheatsheets / methodologies)
 # ---------------------------------------------------------------------------
@@ -340,6 +371,114 @@ def save_custom_triggers(triggers: dict):
         allow_unicode=True, default_flow_style=False, sort_keys=False
     )
     config.CUSTOM_TRIGGERS_FILE.write_text(content, encoding="utf-8")
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Graph
+# ---------------------------------------------------------------------------
+
+def _get_graph_manager():
+    """Instantiate a GraphManager for the current target workspace."""
+    from capo.graph import GraphManager
+    sm = StateManager()
+    if not sm.target or not sm.workspace:
+        raise HTTPException(status_code=400, detail="No active target")
+    gm = GraphManager()
+    gm.load_for_target(sm.workspace, sm.target)
+    return gm, sm
+
+
+@app.get("/api/graph")
+def get_graph():
+    """Return the full knowledge graph, auto-synced from current state."""
+    gm, sm = _get_graph_manager()
+    gm.sync_from_state(sm.state)
+    return gm.get_graph()
+
+
+@app.post("/api/graph/nodes")
+def create_graph_node(body: GraphNodeCreate):
+    """Create a manual node."""
+    gm, _ = _get_graph_manager()
+    node = gm.add_node(
+        node_type=body.type, label=body.label,
+        properties=body.properties, x=body.x, y=body.y,
+    )
+    return node
+
+
+@app.put("/api/graph/nodes/{node_id}")
+def update_graph_node(node_id: str, body: GraphNodeUpdate):
+    """Update a node (state nodes: position/label only)."""
+    gm, _ = _get_graph_manager()
+    try:
+        return gm.update_node(node_id, **body.model_dump(exclude_none=True))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.delete("/api/graph/nodes/{node_id}", status_code=204)
+def delete_graph_node(node_id: str):
+    """Delete a manual node and its edges. Rejects state nodes."""
+    gm, _ = _get_graph_manager()
+    try:
+        gm.delete_node(node_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return Response(status_code=204)
+
+
+@app.post("/api/graph/edges")
+def create_graph_edge(body: GraphEdgeCreate):
+    """Create an edge between any two nodes."""
+    gm, _ = _get_graph_manager()
+    try:
+        return gm.add_edge(
+            source_id=body.source, target_id=body.target,
+            label=body.label, relationship=body.relationship,
+            directed=body.directed,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.put("/api/graph/edges/{edge_id}")
+def update_graph_edge(edge_id: str, body: GraphEdgeUpdate):
+    """Update an edge's label or relationship."""
+    gm, _ = _get_graph_manager()
+    try:
+        return gm.update_edge(edge_id, **body.model_dump(exclude_none=True))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.delete("/api/graph/edges/{edge_id}", status_code=204)
+def delete_graph_edge(edge_id: str):
+    """Delete an edge."""
+    gm, _ = _get_graph_manager()
+    try:
+        gm.delete_edge(edge_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return Response(status_code=204)
+
+
+@app.post("/api/graph/positions", status_code=204)
+def save_graph_positions(positions: list[PositionUpdate]):
+    """Bulk update node positions (for drag persistence)."""
+    gm, _ = _get_graph_manager()
+    gm.update_positions([p.model_dump() for p in positions])
+    return Response(status_code=204)
+
+
+@app.post("/api/graph/clear", status_code=204)
+def clear_graph():
+    """Clear manual nodes and their edges. State nodes survive."""
+    gm, _ = _get_graph_manager()
+    gm.clear_manual()
     return Response(status_code=204)
 
 

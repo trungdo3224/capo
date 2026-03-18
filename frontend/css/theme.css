@@ -400,3 +400,78 @@ h6 { font-size: 0.8125rem; }
 
 /* Sidebar nav badge */
 .nav-badge { background: rgba(34, 211, 238, 0.2); color: var(--accent); font-size: 0.65rem; }
+
+/* ─── Knowledge Graph ─── */
+.graph-container {
+  display: flex;
+  height: calc(100vh - 1rem);
+  gap: 0;
+}
+.graph-canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+}
+.graph-canvas-area canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.graph-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 5;
+}
+.graph-toolbar .btn { font-size: 0.72rem; padding: 4px 10px; }
+.graph-hint {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(14, 14, 19, 0.92);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  pointer-events: none;
+  z-index: 5;
+}
+.graph-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+.graph-panel {
+  width: 300px;
+  min-width: 260px;
+  overflow-y: auto;
+  padding: 0.8rem;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+}
+.graph-panel h6 { color: var(--text-muted); }
+.graph-panel .form-select,
+.graph-panel .form-control {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+  font-size: 0.75rem;
+}
+.graph-panel .form-select:focus,
+.graph-panel .form-control:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.1);
+}
+.graph-panel .form-label { margin-bottom: 0.15rem; }
+.graph-stats { font-size: 0.72rem; color: var(--text-muted); }
+.graph-stats strong { color: var(--text); }
+.graph-panel .btn:focus { box-shadow: none; }
+.graph-panel .btn { transition: opacity 0.12s, background 0.12s; }

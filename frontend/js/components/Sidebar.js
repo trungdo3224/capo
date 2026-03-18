@@ -5,10 +5,11 @@ export default defineComponent({
   name: 'Sidebar',
   setup() {
     const navItems = [
-      { view: 'cheatsheets',  icon: 'fa-book-open',   label: 'Cheatsheets' },
-      { view: 'methodologies',icon: 'fa-code-branch',  label: 'Methodologies' },
-      { view: 'engagement',   icon: 'fa-crosshairs',   label: 'Active Engagement' },
-      { view: 'suggestions',  icon: 'fa-lightbulb',    label: 'Suggestions' },
+      { view: 'cheatsheets',  icon: 'fa-book-open',       label: 'Cheatsheets' },
+      { view: 'methodologies',icon: 'fa-code-branch',      label: 'Methodologies' },
+      { view: 'engagement',   icon: 'fa-crosshairs',       label: 'Active Engagement' },
+      { view: 'graph',        icon: 'fa-diagram-project',  label: 'Knowledge Graph' },
+      { view: 'suggestions',  icon: 'fa-lightbulb',        label: 'Suggestions' },
     ]
 
     function switchView(view) {

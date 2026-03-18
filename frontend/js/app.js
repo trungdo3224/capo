@@ -7,17 +7,19 @@ import Toast           from './components/Toast.js'
 import CheatsheetView  from './views/CheatsheetView.js'
 import MethodologyView from './views/MethodologyView.js'
 import EngagementView  from './views/EngagementView.js'
+import GraphView       from './views/GraphView.js'
 import SuggestionsView from './views/SuggestionsView.js'
 
 const viewMap = {
   cheatsheets:   CheatsheetView,
   methodologies: MethodologyView,
   engagement:    EngagementView,
+  graph:         GraphView,
   suggestions:   SuggestionsView,
 }
 
 const App = {
-  components: { Sidebar, Toast, CheatsheetView, MethodologyView, EngagementView, SuggestionsView },
+  components: { Sidebar, Toast, CheatsheetView, MethodologyView, EngagementView, GraphView, SuggestionsView },
 
   setup() {
     const activeComponent = computed(() => viewMap[currentView.value])

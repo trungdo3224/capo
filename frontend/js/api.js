@@ -23,6 +23,33 @@ async function _post(url, body) {
   return r
 }
 
+async function _postJson(url, body) {
+  const r = await _post(url, body)
+  if (r.status === 204) return null
+  return r.json()
+}
+
+async function _put(url, body) {
+  const r = await fetch(BASE + url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }))
+    throw new Error(err.detail ? JSON.stringify(err.detail) : r.statusText)
+  }
+  return r.json()
+}
+
+async function _delete(url) {
+  const r = await fetch(BASE + url, { method: 'DELETE' })
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }))
+    throw new Error(err.detail ? JSON.stringify(err.detail) : r.statusText)
+  }
+}
+
 // ── Cheatsheets ──────────────────────────────────────────────────────────────
 export const fetchCheatsheets    = ()           => _get('/api/cheatsheets')
 export const getCheatsheet       = (filename)   => _get(`/api/cheatsheets/${filename}`)
@@ -40,3 +67,14 @@ export const fetchEngagement     = ()           => _get('/api/engagement/status'
 export const fetchSuggestions    = ()           => _get('/api/suggestions')
 export const fetchCustomTriggers = ()           => _get('/api/triggers/custom')
 export const saveCustomTriggers  = (data)       => _post('/api/triggers/custom', data)
+
+// ── Knowledge Graph ─────────────────────────────────────────────────────────
+export const fetchGraph         = ()              => _get('/api/graph')
+export const createGraphNode    = (data)          => _postJson('/api/graph/nodes', data)
+export const updateGraphNode    = (id, data)      => _put(`/api/graph/nodes/${id}`, data)
+export const deleteGraphNode    = (id)            => _delete(`/api/graph/nodes/${id}`)
+export const createGraphEdge    = (data)          => _postJson('/api/graph/edges', data)
+export const updateGraphEdge    = (id, data)      => _put(`/api/graph/edges/${id}`, data)
+export const deleteGraphEdge    = (id)            => _delete(`/api/graph/edges/${id}`)
+export const saveGraphPositions = (positions)     => _post('/api/graph/positions', positions)
+export const clearGraph         = ()              => _post('/api/graph/clear', {})
