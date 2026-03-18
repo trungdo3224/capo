@@ -1,0 +1,159 @@
+# ─────────────────────────────────────────────────
+# Network service rules
+# Covers SNMP, DNS, TFTP, VPN, and other infrastructure services
+# ─────────────────────────────────────────────────
+
+# ── SNMP ─────────────────────────────────────────
+
+- id: net_snmp_community
+  name: SNMP Community String Brute-Force
+  description: Brute-force SNMP community strings for device enumeration.
+  priority: P1
+  conditions:
+    require_ports: [161]
+  command_template: onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp-onesixtyone.txt {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-snmp
+
+- id: net_snmp_walk
+  name: SNMP Full Walk
+  description: Walk the entire SNMP MIB tree for users, processes, and network info.
+  priority: P1
+  conditions:
+    require_ports: [161]
+  command_template: snmpwalk -v2c -c public {IP} .1
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-snmp
+
+- id: net_snmp_extended
+  name: SNMP Extended Queries
+  description: Query common SNMP OIDs for users, running processes, and installed software.
+  priority: P2
+  conditions:
+    require_ports: [161]
+  command_template: "snmpwalk -v2c -c public {IP} NET-SNMP-EXTEND-MIB::nsExtendOutputFull"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-snmp
+
+# ── DNS ──────────────────────────────────────────
+
+- id: net_dns_zone_transfer
+  name: DNS Zone Transfer
+  description: Attempt AXFR zone transfer to dump all DNS records.
+  priority: P1
+  conditions:
+    require_ports: [53]
+    require_state: [has_domain]
+  command_template: dig axfr @{IP} {DOMAIN}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-dns
+
+- id: net_dns_reverse
+  name: DNS Reverse Lookup Sweep
+  description: Reverse-resolve IP range to discover additional hostnames.
+  priority: P2
+  conditions:
+    require_ports: [53]
+  command_template: "dnsrecon -r {IP}/24 -n {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-dns
+
+- id: net_dns_enum
+  name: DNS Record Enumeration
+  description: Enumerate all DNS record types (A, AAAA, MX, TXT, SRV, NS).
+  priority: P2
+  conditions:
+    require_ports: [53]
+    require_state: [has_domain]
+  command_template: "dnsrecon -d {DOMAIN} -n {IP} -t std"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-dns
+
+# ── TFTP ─────────────────────────────────────────
+
+- id: net_tftp_enum
+  name: TFTP File Enumeration
+  description: Attempt to pull common files from TFTP (config files, firmware).
+  priority: P2
+  conditions:
+    require_ports: [69]
+  command_template: "nmap -sU -p 69 --script tftp-enum {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/69-udp-tftp
+
+# ── IMAP / POP3 ─────────────────────────────────
+
+- id: net_imap_login
+  name: IMAP Login & Email Dump
+  description: Login to IMAP with discovered credentials and search for sensitive emails.
+  priority: P1
+  conditions:
+    require_ports: [143]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "curl -k 'imap://{IP}' --user '{USER}:{PASS}' -X 'LIST \"\" *'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-imap
+
+- id: net_pop3_login
+  name: POP3 Login & Email Dump
+  description: Login to POP3 with discovered credentials and list messages.
+  priority: P1
+  conditions:
+    require_ports: [110]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "curl -k 'pop3://{IP}' --user '{USER}:{PASS}'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-pop
+
+# ── Rsync ────────────────────────────────────────
+
+- id: net_rsync_list
+  name: Rsync Module Listing
+  description: List accessible rsync modules (may expose backup data).
+  priority: P1
+  conditions:
+    require_ports: [873]
+  command_template: rsync -av --list-only rsync://{IP}/
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/873-pentesting-rsync
+
+# ── VNC ──────────────────────────────────────────
+
+- id: net_vnc_noauth
+  name: VNC No-Auth Check
+  description: Check for VNC instances with no authentication.
+  priority: P1
+  conditions:
+    require_ports: [5900]
+  command_template: vncviewer {IP}::5900
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-vnc
+
+- id: net_vnc_brute
+  name: VNC Password Brute-Force
+  description: Brute-force VNC password.
+  priority: P2
+  conditions:
+    require_ports: [5900]
+  command_template: "hydra -P /usr/share/seclists/Passwords/Default-Credentials/vnc-betterdefaultpasslist.txt {IP} vnc -V"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-vnc
+
+# ── Docker ───────────────────────────────────────
+
+- id: net_docker_api
+  name: Docker API Unauthenticated
+  description: Exposed Docker API — list containers and attempt escape.
+  priority: P1
+  conditions:
+    require_ports: [2375]
+  command_template: "curl http://{IP}:2375/containers/json"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/2375-pentesting-docker
+
+- id: net_docker_api_tls
+  name: Docker API (TLS)
+  description: Exposed Docker TLS API — list containers.
+  priority: P1
+  conditions:
+    require_ports: [2376]
+  command_template: "curl -k https://{IP}:2376/containers/json"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/2375-pentesting-docker
+
+# ── Kubernetes ───────────────────────────────────
+
+- id: net_k8s_api
+  name: Kubernetes API Unauthenticated
+  description: Check for unauthenticated Kubernetes API access.
+  priority: P1
+  conditions:
+    require_ports: [6443]
+  command_template: "curl -k https://{IP}:6443/api/v1/namespaces/default/pods"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-kubernetes

