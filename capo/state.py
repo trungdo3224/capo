@@ -22,7 +22,7 @@ from capo import campaign
 
 # Schema version for state.json — bump when adding/changing fields.
 # Migration logic in StateManager._migrate_state() handles upgrades.
-CURRENT_SCHEMA_VERSION = 2
+CURRENT_SCHEMA_VERSION = 3
 
 # Matches IPv4 addresses or hostnames (alphanumeric + dots/hyphens)
 _TARGET_RE = re.compile(
@@ -187,7 +187,7 @@ class StateManager:
             "schema_version": CURRENT_SCHEMA_VERSION,
             "target": self._target,
             "ip": self._target,
-            "domain": "",
+            "domains": [],
             "os": "",
             "hostname": "",
             "ports": [],
@@ -227,9 +227,26 @@ class StateManager:
             self._state.setdefault("shares", [])
             self._state["schema_version"] = 2
 
-        # Future: add v2 → v3, v3 → v4, etc. here
+        # v2 → v3: single "domain" string → "domains" list
+        if version < 3:
+            old_domain = self._state.pop("domain", "")
+            domains = self._state.get("domains", [])
+            if old_domain and old_domain not in domains:
+                domains.insert(0, old_domain)
+            self._state["domains"] = domains
+            self._state["schema_version"] = 3
 
-        self._save_state()
+        # Direct write during migration — bypass _save_state() merge
+        # to avoid re-introducing removed keys (e.g. "domain") from disk.
+        self._state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        sf = self._state_file()
+        with self._lock_file():
+            tmp = sf.with_suffix(".tmp")
+            tmp.write_text(
+                json.dumps(self._state, indent=2, default=str),
+                encoding="utf-8",
+            )
+            shutil.move(str(tmp), str(sf))
 
     def _lock_file(self) -> FileLock:
         """Return a FileLock for the state file (created lazily)."""
@@ -269,10 +286,10 @@ class StateManager:
                     merged[key] = merged_list
                     
                 elif key == "hashes" and all(isinstance(x, dict) for x in mem_val + disk_val):
-                    disk_keys = {h.get("hash") for h in disk_val}
+                    disk_keys = {(h.get("hash"), h.get("username")) for h in disk_val}
                     merged_list = list(disk_val)
                     for h in mem_val:
-                        if h.get("hash") not in disk_keys:
+                        if (h.get("hash"), h.get("username")) not in disk_keys:
                             merged_list.append(h)
                     merged[key] = merged_list
                     
@@ -317,14 +334,27 @@ class StateManager:
     # --- Public Getters ---
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Get a state value by key, merging with campaign data if active."""
+        """Get a state value by key, merging with campaign data if active.
+
+        Special key "domain" returns the first domain from the "domains" list
+        for backward compatibility.
+        """
+        # Backward-compat: "domain" → first entry in "domains" list
+        if key == "domain":
+            domains = self._state.get("domains", [])
+            if campaign.campaign_manager.active:
+                camp_domain = campaign.campaign_manager.get_var("DOMAIN")
+                if camp_domain:
+                    return camp_domain
+            return domains[0] if domains else (default if default is not None else "")
+
         local_val = self._state.get(key, default)
-        
+
         if not campaign.campaign_manager.active:
             return local_val
             
         if key in ("users", "hashes", "credentials"):
-            camp_list = campaign.campaign_manager._state.get(key, [])
+            camp_list = campaign.campaign_manager.get(key, [])
             local_list = local_val if isinstance(local_val, list) else []
             # For credentials/hashes (dicts), simple "not in" isn't perfect but sufficient for simple display uniqueness
             # A more robust union could be done, but lists of dicts usually have proper dedup at insert time anyway.
@@ -336,7 +366,7 @@ class StateManager:
             return merged
             
         if key == "domain_info":
-            camp_di = campaign.campaign_manager._state.get("domain_info", {})
+            camp_di = campaign.campaign_manager.get("domain_info", {})
             local_di = local_val if isinstance(local_val, dict) else {}
             return {**local_di, **camp_di}
             
@@ -348,14 +378,15 @@ class StateManager:
         Supports: {IP}, {DOMAIN}, {USER}, {PASS}, {DC_IP}, {HOSTNAME}, etc.
         """
         # Campaign fields take precedence if campaign is active
-        domain = campaign.campaign_manager.get_var("DOMAIN") if campaign.campaign_manager.active else self._state.get("domain", "")
+        domains = self._state.get("domains", [])
+        domain = campaign.campaign_manager.get_var("DOMAIN") if campaign.campaign_manager.active else (domains[0] if domains else "")
         dc_ip = campaign.campaign_manager.get_var("DC_IP") if campaign.campaign_manager.active else self._state.get("domain_info", {}).get("dc_ip", "")
         dns_name = campaign.campaign_manager.get_var("DNS_NAME") if campaign.campaign_manager.active else self._state.get("domain_info", {}).get("dns_name", "")
         
         if campaign.campaign_manager.active:
             user = campaign.campaign_manager.get_var("USER")
             users_file = campaign.campaign_manager.get_var("USERFILE")
-            hashes_file = str(campaign.campaign_manager._dir / "loot" / "hashes.txt") if campaign.campaign_manager._dir else ""
+            hashes_file = str(campaign.campaign_manager.campaign_dir / "loot" / "hashes.txt") if campaign.campaign_manager.campaign_dir else ""
             pass_file = campaign.campaign_manager.get_var("PASSFILE")
             password = campaign.campaign_manager.get_var("PASS")
         else:
@@ -380,6 +411,7 @@ class StateManager:
             "DNS_NAME": dns_name,
             "USER": user,
             "PASS": password,
+            "PASSWORD": password,
             "USERS_FILE": users_file,
             "USERFILE": users_file,
             "HASHES_FILE": hashes_file,
@@ -397,6 +429,20 @@ class StateManager:
         """Set a state value and persist."""
         self._state[key] = value
         self._save_state()
+
+    def add_domain(self, domain: str):
+        """Add a domain name to the domains list (deduplicated)."""
+        if not domain:
+            return
+        self._state.setdefault("domains", [])
+        if domain not in self._state["domains"]:
+            self._state["domains"].append(domain)
+            self._save_state()
+            # Also update domain_info primary domain if empty
+            di = self._state.setdefault("domain_info", {})
+            if not di.get("domain_name"):
+                di["domain_name"] = domain
+                self._save_state()
 
     def add_port(self, port: int, protocol: str = "tcp", service: str = "",
                  version: str = "", state: str = "open"):
@@ -606,7 +652,7 @@ class StateManager:
 - **IP:** {self._state.get('ip', '')}
 - **OS:** {self._state.get('os', 'Unknown')}
 - **Hostname:** {self._state.get('hostname', '')}
-- **Domain:** {self._state.get('domain', '')}
+- **Domains:** {', '.join(self._state.get('domains', [])) or 'N/A'}
 
 ## Recon
 

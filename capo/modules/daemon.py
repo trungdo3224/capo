@@ -46,7 +46,7 @@ class SuggestionRule:
         # 3. Legacy: Check required state strings
         req_state = self.conditions.get("require_state", [])
         for req in req_state:
-            if req == "has_domain" and not state_data.get("domain"):
+            if req == "has_domain" and not state_data.get("domains") and not state_data.get("domain"):
                 return False
             if req == "has_valid_user" and not state_data.get("users") and not state_data.get("credentials"):
                 return False
@@ -87,11 +87,11 @@ class Daemon:
                     console.print(f"[red]Error loading rule {rule_file}: {e}[/red]")
 
     def run(self):
-        if not self.state_manager._workspace:
+        if not self.state_manager.workspace:
             console.print("[red]No active target set. Use 'capo target set <ip>' first.[/red]")
             return
 
-        state_file = self.state_manager._workspace / "state.json"
+        state_file = self.state_manager.workspace / "state.json"
         if not state_file.exists():
             console.print("[red]State file not found.[/red]")
             return
@@ -127,7 +127,7 @@ class Daemon:
         domain = self.state_manager.get_var("DOMAIN") or "{DOMAIN}"
         target_ip = self.state_manager.get_var("IP") or "{IP}"
         user = self.state_manager.get_var("USER") or "{USER}"
-        pwd = self.state_manager.get_var("PASS") or "{PASSWORD}"
+        pwd = self.state_manager.get_var("PASS") or "{PASS}"
         user_file = self.state_manager.get_var("USERFILE") or "{USERFILE}"
         pass_file = self.state_manager.get_var("PASSFILE") or "{PASSFILE}"
                     
@@ -135,6 +135,7 @@ class Daemon:
         cmd = cmd.replace("{IP}", str(target_ip))
         cmd = cmd.replace("{USER}", str(user))
         cmd = cmd.replace("{PASSWORD}", str(pwd))
+        cmd = cmd.replace("{PASS}", str(pwd))
         cmd = cmd.replace("{USERFILE}", str(user_file))
         cmd = cmd.replace("{PASSFILE}", str(pass_file))
         return cmd

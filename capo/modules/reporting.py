@@ -15,7 +15,8 @@ def generate_markdown(state: dict | None = None) -> str:
     """Generate a full Markdown pentest report from state."""
     s = state or state_manager.state
     target = s.get("ip", "Unknown")
-    domain = s.get("domain", "")
+    domains = s.get("domains", [])
+    domain = domains[0] if domains else ""
     hostname = s.get("hostname", "")
     os_info = s.get("os", "Unknown")
     ports = s.get("ports", [])
@@ -46,8 +47,8 @@ def generate_markdown(state: dict | None = None) -> str:
     lines.append(f"| Target IP | {target} |")
     if hostname:
         lines.append(f"| Hostname | {hostname} |")
-    if domain:
-        lines.append(f"| Domain | {domain} |")
+    if domains:
+        lines.append(f"| Domains | {', '.join(domains)} |")
     if domain_info.get("dc_ip"):
         lines.append(f"| DC IP | {domain_info['dc_ip']} |")
     lines.append(f"| OS | {os_info or 'Unknown'} |")

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>C.A.P.O — Code Knowledge Graph</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+#controls {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  background: rgba(13,17,23,0.95); border-bottom: 1px solid #30363d;
+  padding: 12px 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+#controls h1 { font-size: 18px; color: #58a6ff; white-space: nowrap; }
+#controls label { font-size: 13px; color: #8b949e; }
+#controls select, #controls input[type=range] { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; padding: 4px 8px; border-radius: 6px; }
+#controls button {
+  background: #21262d; border: 1px solid #30363d; color: #c9d1d9;
+  padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+#controls button:hover { background: #30363d; }
+#controls button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+#legend {
+  position: fixed; bottom: 20px; left: 20px; z-index: 10;
+  background: rgba(22,27,34,0.95); border: 1px solid #30363d; border-radius: 8px;
+  padding: 14px 18px; font-size: 13px;
+}
+#legend h3 { color: #58a6ff; margin-bottom: 8px; font-size: 14px; }
+.legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+#tooltip {
+  position: fixed; display: none; z-index: 20;
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 10px 14px; font-size: 13px; max-width: 320px; pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+#tooltip .tt-name { color: #58a6ff; font-weight: 600; font-size: 14px; }
+#tooltip .tt-cluster { color: #8b949e; margin-top: 2px; }
+#tooltip .tt-type { color: #f0883e; margin-top: 2px; }
+#tooltip .tt-connections { color: #3fb950; margin-top: 4px; }
+#stats {
+  position: fixed; bottom: 20px; right: 20px; z-index: 10;
+  background: rgba(22,27,34,0.95); border: 1px solid #30363d; border-radius: 8px;
+  padding: 14px 18px; font-size: 13px; text-align: right;
+}
+#stats h3 { color: #58a6ff; margin-bottom: 6px; font-size: 14px; }
+#stats .stat-row { color: #8b949e; margin: 2px 0; }
+#stats .stat-val { color: #c9d1d9; font-weight: 600; }
+canvas { display: block; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <h1>C.A.P.O Knowledge Graph</h1>
+  <label>Filter Cluster:
+    <select id="clusterFilter"><option value="all">All Clusters</option></select>
+  </label>
+  <label>Node Size: <input type="range" id="sizeSlider" min="2" max="12" value="5"></label>
+  <label>Link Opacity: <input type="range" id="linkOpacity" min="5" max="100" value="25"></label>
+  <button id="btnLabels" class="active">Labels</button>
+  <button id="btnPhysics" class="active">Physics</button>
+  <button id="btnReset">Reset View</button>
+</div>
+
+<div id="legend"><h3>Clusters</h3></div>
+
+<div id="tooltip">
+  <div class="tt-name"></div>
+  <div class="tt-cluster"></div>
+  <div class="tt-type"></div>
+  <div class="tt-connections"></div>
+</div>
+
+<div id="stats">
+  <h3>Graph Stats</h3>
+</div>
+
+<canvas id="graph"></canvas>
+
+<script>
+// ── Data ──
+const clusterColors = {
+  "Capo":     "#f0883e",
+  "Cli":      "#58a6ff",
+  "Js":       "#d2a8ff",
+  "Modules":  "#3fb950",
+  "Studio":   "#f778ba",
+  "Tests":    "#484f58",
+  "Views":    "#79c0ff",
+  "Wrappers": "#ffa657"
+};
+
+const clusterMembers = {
+  "Capo": ["CapoError","ScanError","StateError","TargetError","ToolNotFoundError","_build_suggestions","_fresh_state","_inject","_list_files","_load_daemon_rules","_load_state","_load_yaml","_lock_file","_merge_state","_migrate_state","_save_state","_save_yaml","_state_file","_validate_filename","_write_list_file","add_credential","add_hash","add_host","add_note","add_user","banner","ensure_dirs","get_cheatsheet","get_methodology","get_suggestions","list_cheatsheets","list_methodologies","main","save_cheatsheet","save_methodology","set","set_flag","update_domain_info"],
+  "Cli": ["_auth_str","_domain_opt","_dry_run_opt","_find_impacket","_load_current_campaign","_load_directory","_load_file","_output_base","_output_dir","_parse_gobuster_dns","_parse_xml","_pass_opt","_show_methodology_next","_show_methodology_steps","_subdns_gobuster","_target_arg","_user_opt","add_domain","asrep_roast","brute_http_get","brute_http_post","brute_web_form","dcsync","display_cheatsheet_results","exec_shell","export_state","get_by_category","http_get_form","http_post_form","init_custom_triggers","inject_variables","kerberoast","list_categories","load_all","mark_metasploit_used","methodology_auto_check","methodology_done","methodology_next","methodology_start","mode_use_msf","print_command","print_credentials_table","print_directory_tree","print_error","print_info","print_ports_table","print_state_table","print_success","print_warning","psexec","query_service","refresh_notes","report_generate","report_preview","report_timeline","search_cheatsheet","secretsdump","set_campaign","smbclient","start_methodology","state_creds","state_dirs","state_export","state_history","state_ports","state_refresh_notes","state_show","state_sync_files","state_users","state_workspace","target_add_cred","target_add_domain","target_add_hash","target_add_user","target_add_vhost","target_campaign","target_flag","target_note","target_set","target_set_domain","target_set_lhost","target_show","triggers_init","web_form","wmiexec"],
+  "Js": ["_get","_post","fetchCheatsheets","fetchCustomTriggers","fetchEngagement","fetchMethodologies","fetchSuggestions","getCheatsheet","getMethodology","saveCheatsheet","saveCustomTriggers","saveMethodology"],
+  "Modules": ["_check_ad_environment","_check_credential_opportunities","_check_web_findings","_html_escape","_html_inline","_suggest_methodologies","check_triggers","detailed_scan","generate_html","generate_markdown","get_applicable","get_open_ports","get_suggestions","has_service","is_applicable","load_rules","print_suggestion","scan_detailed","suggest","triggers_check"],
+  "Studio": ["_get_files","get_cheatsheet","get_methodology","list_cheatsheets","list_methodologies","read_yaml","save_cheatsheet","save_methodology","write_yaml"],
+  "Views": ["addNewPort","copyCmd","load","loadFile","loadList","refresh","save","saveTriggers","setup","showToast","startTimer","stopTimer","toggleRefresh"],
+  "Wrappers": ["BaseWrapper","BruteWrapper","ImpacketWrapper","NetExecWrapper","NmapWrapper","WebFuzzWrapper","_build_auth_args","_check_target","_execute_streaming","_output_file","_show_next_steps","_subdns_ffuf","add_scan_record","brute_ssh","custom_scan","dir_fuzz","ensure_target","execute","is_available","ldap_enum","nxc_guest","nxc_ldap","nxc_null","nxc_pass_pol","nxc_rid_brute","nxc_shares","nxc_spray","nxc_users","nxc_winrm","os_scan","parse_output","ports_scan","quick_scan","recursive_fuzz","scan_custom","scan_full","scan_os","scan_ports","scan_quick","scan_scripts","scan_udp","scan_vuln","scripts_scan","smb_enum_shares","smb_enum_users","smb_guest_session","smb_null_session","smb_pass_pol","smb_rid_brute","spray_password","ssh","subdns_fuzz","udp_scan","vhost_fuzz","vuln_scan","web_fuzz","web_recursive","web_subdns","web_vhost","winrm_check"]
+};
+
+const callEdges = [
+  ["setup","startTimer"],["__init__.py","register_cheatsheet_commands"],["__init__.py","register_suggest_command"],
+  ["_auto_load","_load_state"],["_auto_load","_current_target_file"],
+  ["set_target","add_host"],["set_target","_load_state"],["set_target","_init_workspace"],["set_target","_current_target_file"],
+  ["_init_workspace","_generate_notes_template"],
+  ["_load_state","_save_state"],["_load_state","_migrate_state"],["_load_state","_fresh_state"],["_load_state","_state_file"],
+  ["_migrate_state","_lock_file"],["_migrate_state","_state_file"],
+  ["_lock_file","_state_file"],
+  ["_save_state","_merge_state"],["_save_state","_lock_file"],["_save_state","_state_file"],
+  ["get","get_var"],["get_var","get_var"],
+  ["load_all","load_all"],
+  ["generate_html","generate_markdown"],
+  ["_names","_load_web_attacks"],["_steps_by_id","_load_web_app"],
+  ["evaluate_and_suggest","evaluate"],["evaluate_and_suggest","_replace_vars"],
+  ["load_rules","SuggestionRule"],
+  ["suggest","get_suggestions"],["suggest","check_triggers"],
+  ["scan_detailed","parse_output"],["scan_quick","parse_output"],
+  ["quick_scan","parse_output"],["detailed_scan","parse_output"],
+  ["execute","_execute_streaming"],["execute","add_scan_record"],["execute","parse_output"],
+  ["dir_fuzz","parse_output"],["vhost_fuzz","parse_output"],["subdns_fuzz","parse_output"],
+  ["brute_ssh","parse_output"],
+  ["nxc_null","parse_output"],["nxc_guest","parse_output"],["nxc_shares","parse_output"],
+  ["nxc_users","parse_output"],["nxc_rid_brute","parse_output"],["nxc_spray","parse_output"],
+  ["kerberoast","exec_shell"],["asrep_roast","exec_shell"],["dcsync","exec_shell"],["secretsdump","exec_shell"],
+  ["psexec","exec_shell"],["wmiexec","exec_shell"],["smbclient","exec_shell"],
+  ["report_generate","generate_markdown"],["report_generate","generate_html"],
+  ["target_set","set_target"],["target_show","print_state_table"],
+  ["state_ports","print_ports_table"],["state_creds","print_credentials_table"],
+  ["add_domain","_save_state"],["add_user","_save_state"],["add_port","_save_state"],
+  ["add_credential","_save_state"],["add_hash","_save_state"],["add_note","_save_state"],
+  ["set_flag","_save_state"],["add_share","_save_state"],["add_directory","_save_state"],["add_vhost","_save_state"],
+];
+
+// ── Build graph ──
+const nodeMap = {};
+const nodes = [];
+const links = [];
+
+// Create unique nodes from cluster membership (skip Tests for cleaner view)
+for (const [cluster, members] of Object.entries(clusterMembers)) {
+  if (cluster === "Tests") continue;
+  for (const name of members) {
+    const key = `${name}@${cluster}`;
+    if (!nodeMap[key]) {
+      const node = { id: key, name, cluster, connections: 0, x: 0, y: 0, vx: 0, vy: 0 };
+      nodeMap[key] = node;
+      nodes.push(node);
+    }
+  }
+}
+
+// Resolve edges — find source/target in non-Test clusters
+function findNode(name) {
+  // Prefer specific cluster match
+  for (const cluster of ["Capo","Cli","Modules","Wrappers","Studio","Js","Views"]) {
+    const key = `${name}@${cluster}`;
+    if (nodeMap[key]) return nodeMap[key];
+  }
+  return null;
+}
+
+for (const [src, tgt] of callEdges) {
+  const s = findNode(src);
+  const t = findNode(tgt);
+  if (s && t && s !== t) {
+    links.push({ source: s, target: t });
+    s.connections++;
+    t.connections++;
+  }
+}
+
+// ── Canvas setup ──
+const canvas = document.getElementById("graph");
+const ctx = canvas.getContext("2d");
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener("resize", resize);
+
+// ── Force simulation (manual) ──
+let showLabels = true;
+let physicsOn = true;
+let baseNodeSize = 5;
+let linkAlpha = 0.25;
+let filterCluster = "all";
+
+// Initialize positions in cluster groups
+const clusterCenters = {};
+const clusterKeys = Object.keys(clusterColors).filter(c => c !== "Tests");
+clusterKeys.forEach((c, i) => {
+  const angle = (i / clusterKeys.length) * Math.PI * 2;
+  clusterCenters[c] = { x: Math.cos(angle) * 250, y: Math.sin(angle) * 250 };
+});
+
+nodes.forEach(n => {
+  const cc = clusterCenters[n.cluster] || { x: 0, y: 0 };
+  n.x = cc.x + (Math.random() - 0.5) * 200;
+  n.y = cc.y + (Math.random() - 0.5) * 200;
+});
+
+// Camera
+let camX = 0, camY = 0, camZoom = 1;
+
+function toScreen(x, y) {
+  return [(x - camX) * camZoom + W / 2, (y - camY) * camZoom + H / 2];
+}
+function toWorld(sx, sy) {
+  return [(sx - W / 2) / camZoom + camX, (sy - H / 2) / camZoom + camY];
+}
+
+// Physics step
+function simulate() {
+  if (!physicsOn) return;
+  const alpha = 0.3;
+  const repulsion = 800;
+  const attraction = 0.005;
+  const clusterPull = 0.01;
+  const damping = 0.85;
+
+  // Repulsion (Barnes-Hut approximation — simplified N^2 for small graph)
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx * dx + dy * dy;
+      if (d2 < 1) d2 = 1;
+      const f = repulsion / d2;
+      const fx = dx / Math.sqrt(d2) * f * alpha;
+      const fy = dy / Math.sqrt(d2) * f * alpha;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    }
+  }
+
+  // Link attraction
+  for (const l of links) {
+    const dx = l.target.x - l.source.x;
+    const dy = l.target.y - l.source.y;
+    const d = Math.sqrt(dx * dx + dy * dy) || 1;
+    const f = (d - 80) * attraction * alpha;
+    const fx = dx / d * f, fy = dy / d * f;
+    l.source.vx += fx; l.source.vy += fy;
+    l.target.vx -= fx; l.target.vy -= fy;
+  }
+
+  // Cluster centering pull
+  for (const n of nodes) {
+    const cc = clusterCenters[n.cluster];
+    if (cc) {
+      n.vx += (cc.x - n.x) * clusterPull * alpha;
+      n.vy += (cc.y - n.y) * clusterPull * alpha;
+    }
+  }
+
+  // Apply velocity
+  for (const n of nodes) {
+    n.vx *= damping;
+    n.vy *= damping;
+    n.x += n.vx;
+    n.y += n.vy;
+  }
+}
+
+// ── Render ──
+let hoveredNode = null;
+let dragNode = null;
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0d1117";
+  ctx.fillRect(0, 0, W, H);
+
+  const visibleNodes = filterCluster === "all" ? nodes : nodes.filter(n => n.cluster === filterCluster);
+  const visibleSet = new Set(visibleNodes);
+  const visibleLinks = links.filter(l => visibleSet.has(l.source) && visibleSet.has(l.target));
+
+  // Draw links
+  ctx.lineWidth = 0.5 * camZoom;
+  for (const l of visibleLinks) {
+    const [x1, y1] = toScreen(l.source.x, l.source.y);
+    const [x2, y2] = toScreen(l.target.x, l.target.y);
+
+    let alpha = linkAlpha;
+    if (hoveredNode && (l.source === hoveredNode || l.target === hoveredNode)) {
+      alpha = 0.9;
+      ctx.lineWidth = 1.5 * camZoom;
+    } else if (hoveredNode) {
+      alpha = 0.05;
+      ctx.lineWidth = 0.5 * camZoom;
+    }
+
+    ctx.strokeStyle = `rgba(88,166,255,${alpha})`;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Arrow
+    if (alpha > 0.1) {
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const r = (baseNodeSize + Math.min(l.target.connections, 10)) * camZoom;
+      const ax = x2 - Math.cos(angle) * r;
+      const ay = y2 - Math.sin(angle) * r;
+      const arrowSize = 4 * camZoom;
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(ax - arrowSize * Math.cos(angle - 0.4), ay - arrowSize * Math.sin(angle - 0.4));
+      ctx.lineTo(ax - arrowSize * Math.cos(angle + 0.4), ay - arrowSize * Math.sin(angle + 0.4));
+      ctx.fill();
+    }
+  }
+
+  // Draw nodes
+  for (const n of visibleNodes) {
+    const [sx, sy] = toScreen(n.x, n.y);
+    const r = (baseNodeSize + Math.min(n.connections * 0.5, 8)) * camZoom;
+    const col = clusterColors[n.cluster] || "#8b949e";
+
+    let nodeAlpha = 1;
+    if (hoveredNode && hoveredNode !== n) {
+      const isConnected = visibleLinks.some(l =>
+        (l.source === hoveredNode && l.target === n) || (l.target === hoveredNode && l.source === n)
+      );
+      nodeAlpha = isConnected ? 1 : 0.15;
+    }
+
+    ctx.globalAlpha = nodeAlpha;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (n === hoveredNode) {
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+
+    // Labels
+    if (showLabels && camZoom > 0.6) {
+      const fontSize = Math.max(9, 11 * camZoom);
+      ctx.font = `${fontSize}px 'Segoe UI', system-ui, sans-serif`;
+      ctx.fillStyle = nodeAlpha < 0.3 ? `rgba(201,209,217,${nodeAlpha})` : "#c9d1d9";
+      ctx.textAlign = "center";
+      ctx.fillText(n.name, sx, sy - r - 4 * camZoom);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  requestAnimationFrame(() => { simulate(); draw(); });
+}
+
+draw();
+
+// ── Interaction ──
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  camZoom *= factor;
+  camZoom = Math.max(0.1, Math.min(5, camZoom));
+  camX = wx - (e.clientX - W / 2) / camZoom;
+  camY = wy - (e.clientY - H / 2) / camZoom;
+}, { passive: false });
+
+let isPanning = false, panStartX, panStartY;
+
+canvas.addEventListener("mousedown", e => {
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  // Check if clicking a node
+  const visibleNodes = filterCluster === "all" ? nodes : nodes.filter(n => n.cluster === filterCluster);
+  for (const n of visibleNodes) {
+    const dx = n.x - wx, dy = n.y - wy;
+    const r = (baseNodeSize + Math.min(n.connections * 0.5, 8)) / camZoom + 5;
+    if (dx * dx + dy * dy < r * r) {
+      dragNode = n;
+      return;
+    }
+  }
+  isPanning = true;
+  panStartX = e.clientX;
+  panStartY = e.clientY;
+});
+
+canvas.addEventListener("mousemove", e => {
+  if (dragNode) {
+    const [wx, wy] = toWorld(e.clientX, e.clientY);
+    dragNode.x = wx;
+    dragNode.y = wy;
+    dragNode.vx = 0;
+    dragNode.vy = 0;
+    return;
+  }
+  if (isPanning) {
+    const dx = e.clientX - panStartX;
+    const dy = e.clientY - panStartY;
+    camX -= dx / camZoom;
+    camY -= dy / camZoom;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    return;
+  }
+
+  // Hover detection
+  const [wx, wy] = toWorld(e.clientX, e.clientY);
+  const visibleNodes = filterCluster === "all" ? nodes : nodes.filter(n => n.cluster === filterCluster);
+  let found = null;
+  for (const n of visibleNodes) {
+    const dx = n.x - wx, dy = n.y - wy;
+    const r = (baseNodeSize + Math.min(n.connections * 0.5, 8)) / camZoom + 5;
+    if (dx * dx + dy * dy < r * r) { found = n; break; }
+  }
+  hoveredNode = found;
+  canvas.style.cursor = found ? "pointer" : "grab";
+
+  const tooltip = document.getElementById("tooltip");
+  if (found) {
+    tooltip.style.display = "block";
+    tooltip.style.left = (e.clientX + 15) + "px";
+    tooltip.style.top = (e.clientY + 15) + "px";
+    tooltip.querySelector(".tt-name").textContent = found.name;
+    tooltip.querySelector(".tt-cluster").textContent = "Cluster: " + found.cluster;
+    tooltip.querySelector(".tt-connections").textContent = "Connections: " + found.connections;
+  } else {
+    tooltip.style.display = "none";
+  }
+});
+
+canvas.addEventListener("mouseup", () => { dragNode = null; isPanning = false; });
+
+// ── Controls ──
+const clusterSelect = document.getElementById("clusterFilter");
+for (const c of clusterKeys) {
+  const opt = document.createElement("option");
+  opt.value = c; opt.textContent = c;
+  clusterSelect.appendChild(opt);
+}
+clusterSelect.addEventListener("change", e => { filterCluster = e.target.value; });
+
+document.getElementById("sizeSlider").addEventListener("input", e => { baseNodeSize = +e.target.value; });
+document.getElementById("linkOpacity").addEventListener("input", e => { linkAlpha = +e.target.value / 100; });
+
+document.getElementById("btnLabels").addEventListener("click", e => {
+  showLabels = !showLabels;
+  e.target.classList.toggle("active", showLabels);
+});
+document.getElementById("btnPhysics").addEventListener("click", e => {
+  physicsOn = !physicsOn;
+  e.target.classList.toggle("active", physicsOn);
+});
+document.getElementById("btnReset").addEventListener("click", () => {
+  camX = 0; camY = 0; camZoom = 1; filterCluster = "all";
+  clusterSelect.value = "all";
+});
+
+// ── Legend ──
+const legend = document.getElementById("legend");
+for (const [name, color] of Object.entries(clusterColors)) {
+  if (name === "Tests") continue;
+  const count = clusterMembers[name]?.length || 0;
+  const div = document.createElement("div");
+  div.className = "legend-item";
+  div.innerHTML = `<div class="legend-dot" style="background:${color}"></div>${name} <span style="color:#8b949e">(${count})</span>`;
+  legend.appendChild(div);
+}
+
+// ── Stats ──
+const stats = document.getElementById("stats");
+const crossClusterLinks = links.filter(l => l.source.cluster !== l.target.cluster).length;
+stats.innerHTML = `
+  <h3>Graph Stats</h3>
+  <div class="stat-row">Nodes: <span class="stat-val">${nodes.length}</span></div>
+  <div class="stat-row">Edges: <span class="stat-val">${links.length}</span></div>
+  <div class="stat-row">Clusters: <span class="stat-val">${clusterKeys.length}</span></div>
+  <div class="stat-row">Cross-cluster: <span class="stat-val">${crossClusterLinks}</span></div>
+  <div class="stat-row" style="margin-top:8px;color:#58a6ff;font-size:12px">
+    Scroll to zoom &middot; Drag to pan<br>Click+drag nodes to move
+  </div>
+`;
+</script>
+</body>
+</html>

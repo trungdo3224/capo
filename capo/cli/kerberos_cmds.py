@@ -120,10 +120,10 @@ def psexec(
 
     Supports pass-the-hash with --hash. This opens an interactive shell.
     """
-    ensure_target(None)
+    ensure_target(target)
     from capo.modules.wrappers.impacket_wrapper import ImpacketWrapper
     w = ImpacketWrapper()
-    w.exec_shell("psexec", username=username, password=password, hashes=hash_, domain=domain)
+    w.exec_shell("psexec", target=target, username=username, password=password, hashes=hash_, domain=domain)
 
 
 @kerberos_app.command("wmiexec")
@@ -138,10 +138,10 @@ def wmiexec(
 
     Supports pass-the-hash with --hash. This opens an interactive shell.
     """
-    ensure_target(None)
+    ensure_target(target)
     from capo.modules.wrappers.impacket_wrapper import ImpacketWrapper
     w = ImpacketWrapper()
-    w.exec_shell("wmiexec", username=username, password=password, hashes=hash_, domain=domain)
+    w.exec_shell("wmiexec", target=target, username=username, password=password, hashes=hash_, domain=domain)
 
 
 @kerberos_app.command("smbclient")
@@ -156,7 +156,7 @@ def smbclient(
 
     Leave --user blank for a null session attempt.
     """
-    ensure_target(None)
+    ensure_target(target)
     from capo.modules.wrappers.impacket_wrapper import ImpacketWrapper
     w = ImpacketWrapper()
-    w.exec_shell("smbclient", username=username, password=password, hashes=hash_, domain=domain)
+    w.exec_shell("smbclient", target=target, username=username, password=password, hashes=hash_, domain=domain)

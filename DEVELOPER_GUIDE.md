@@ -15,12 +15,12 @@ CAPO is built on four core pillars:
 
 - **CLI Layer (`capo/cli/`)**: Built with [Typer](https://typer.tiangolo.com/). `cli/__init__.py` assembles the Typer app and registers all subcommand groups. CLI modules pass arguments to module-layer classes — no business logic lives here.
 - **State Manager (`capo/state.py`)**: Manages `~/.capo/workspaces/<target>/state.json` using `filelock` for safe concurrent writes. All target-specific data (ports, users, credentials, directories) flows through here.
-- **Campaign Manager (`capo/campaign.py`)**: Manages `~/.capo/campaigns/<name>/campaign.json`. Tracks engagement-wide AD data (domain, cross-host users, hashes, credentials). State Manager merges campaign data into `get_var()` lookups when a campaign is active.
+- **Campaign Manager (`capo/campaign.py`)**: Manages `~/.capo/campaigns/<name>/campaign.json`. Tracks engagement-wide AD data (domain, cross-host users, hashes, credentials). State Manager merges campaign data into `get_var()` lookups when a campaign is active. Public API: `.get(key)`, `.campaign_dir`, `.get_var()`, `.add_user()`, `.add_hash()`, `.add_credential()`, `.update_domain_info()`.
 - **Wrappers (`capo/modules/wrappers/`)**: Python classes inheriting from `BaseWrapper`. Each wrapper executes an external binary, parses its output, and pushes findings into State Manager.
 - **Cheatsheet Engine (`capo/modules/cheatsheet/engine.py`)**: Loads 13 core YAMLs + custom YAMLs. Performs fuzzy search using `thefuzz`. Injects state variables into commands at lookup time.
 - **Methodology Engine (`capo/modules/methodology.py`)**: Loads attack workflows from `core_methodologies/`. Tracks per-step progress in `state.json["methodology_progress"]`. Steps can self-complete when state satisfies configured minimums.
 - **Trigger System (`capo/modules/triggers.py`)**: `PORT_TRIGGERS` dict maps port numbers to contextual suggestions. `check_triggers()` evaluates open ports + AD/web/credential context and prints next-step commands.
-- **Daemon (`capo/modules/daemon.py`)**: Background process that polls `state.json` every 2 seconds. Loads `core_rules/*.yaml` (JMESPath-based conditions) and fires suggestion tables when state changes.
+- **Daemon (`capo/modules/daemon.py`)**: Background process that polls `state.json` every 2 seconds. Loads `core_rules/*.yaml` (JMESPath-based conditions) and fires suggestion tables when state changes. The `has_domain` condition checks both `domains` (v3) and `domain` (v2) keys for backward compatibility.
 - **Mode Manager (`capo/modules/mode.py`)**: Enforces OSCP/CPTS exam policies. Controls which tools are allowed (e.g., Metasploit restrictions), AI feature gating, and logs Metasploit usage.
 - **REST API (`capo/api.py`)**: FastAPI app (`capo.api:app`) exposing engagement state, suggestions, cheatsheets, methodologies, and triggers over HTTP for external tool integration and the Studio UI.
 - **Studio (`capo/studio/`)**: Separate FastAPI app (`capo.studio.api:app`) launched via `capo studio`. Serves the React frontend and provides CRUD over cheatsheets/methodologies.
@@ -39,7 +39,7 @@ capo/
 ├── errors.py                # Custom exceptions (TargetError, ToolNotFoundError, CapoError)
 ├── cli/
 │   ├── __init__.py          # Typer app assembly, subapp registration
-│   ├── target.py            # capo target commands
+│   ├── target.py            # capo target commands (set, show, add-domain, add-user, etc.)
 │   ├── scan.py              # capo scan commands
 │   ├── nxc.py               # capo nxc commands
 │   ├── brute.py             # capo brute commands
@@ -84,14 +84,14 @@ capo/
 
 Running `capo target set 10.129.231.194` creates `~/.capo/workspaces/10.129.231.194/state.json`.
 
-### Full State Schema (v2):
+### Full State Schema (v3):
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "target": "10.129.231.194",
   "ip": "10.129.231.194",
-  "domain": "corp.local",
+  "domains": ["corp.local", "child.corp.local"],
   "os": "Windows Server 2016",
   "hostname": "DC01",
   "ports": [
@@ -118,11 +118,25 @@ Running `capo target set 10.129.231.194` creates `~/.capo/workspaces/10.129.231.
 }
 ```
 
-All tokens (`{IP}`, `{DOMAIN}`, `{USER}`, `{PASS}`, `{USERFILE}`, `{PASSFILE}`, `{DC_IP}`, `{LHOST}`, `{LPORT}`, `{HOSTNAME}`, `{USERS_FILE}`, `{HASHES_FILE}`) are resolved by `StateManager.get_var()`.
+All tokens (`{IP}`, `{DOMAIN}`, `{USER}`, `{PASS}`, `{PASSWORD}`, `{USERFILE}`, `{PASSFILE}`, `{DC_IP}`, `{LHOST}`, `{LPORT}`, `{HOSTNAME}`, `{USERS_FILE}`, `{HASHES_FILE}`) are resolved by `StateManager.get_var()`. `{PASSWORD}` is an alias for `{PASS}`.
 
 When a campaign is active, `StateManager.get_var()` also merges campaign-level users/hashes/credentials.
 
-**Concurrency**: All writes use `filelock` + atomic temp-file swap. List fields are deduplicated-union'd; dict fields are shallow-merged on concurrent writes.
+### Multi-Domain Support (v3)
+
+State schema v3 replaced the single `"domain"` string with a `"domains"` list, allowing targets with multiple associated domains (e.g., parent and child AD domains). Key behaviors:
+
+- **`StateManager.add_domain(domain)`** — Appends to the `domains` list (deduplicated). Also sets `domain_info.domain_name` if empty.
+- **`StateManager.get("domain")`** — Backward-compatible: returns the first entry from `domains[]`.
+- **`StateManager.get_var("DOMAIN")`** — Returns the first domain, or campaign domain if a campaign is active.
+- **CLI**: `capo target add-domain <domain>` adds domains incrementally. `capo target set --domain` and `capo target set-domain` both use `add_domain()`.
+- **Automatic migration**: v2 state files are migrated on load — the old `"domain"` string is moved into `domains[0]` and the key is removed.
+
+### Hash Deduplication
+
+Hashes are deduplicated by `(hash, username)` tuple, not hash alone. This allows the same hash to appear for different users without being collapsed.
+
+**Concurrency**: All writes use `filelock` + atomic temp-file swap. List fields are deduplicated-union'd; dict fields are shallow-merged on concurrent writes. Schema migrations bypass the merge and write directly to avoid re-introducing removed keys.
 
 ---
 
@@ -186,7 +200,7 @@ class GobusterWrapper(BaseWrapper):
         return []
 ```
 
-Always save raw output to `~/.capo/workspaces/<ip>/scans/` and raise `capo.errors.ToolNotFoundError` if the binary is missing.
+Always save raw output to `~/.capo/workspaces/<ip>/scans/` and raise `capo.errors.ToolNotFoundError` if the binary is missing. `BaseWrapper._output_dir()` raises `TargetError` if no target is set.
 
 ### C. Creating a New Methodology (No Code Needed)
 
@@ -279,13 +293,13 @@ Key conventions:
 
 | File | What it tests |
 |---|---|
-| `test_state.py` | StateManager: set_target, add_port, add_user, add_credential, add_hash, get_var, export, schema migration |
+| `test_state.py` | StateManager: set_target, add_port, add_user, add_credential, add_hash, add_domain, get_var, export, schema v2→v3 migration |
 | `test_campaign.py` | CampaignManager: set/clear campaign, add_host/user/hash/credential, state merge |
 | `test_cheatsheet.py` | CheatsheetEngine: load_all, search, fuzzy_search, variable injection, multi-credential expansion |
 | `test_triggers.py` | PORT_TRIGGERS, check_triggers, custom trigger loading, AD/web/credential context |
 | `test_methodology.py` | MethodologyEngine: load, get_applicable, get_progress, auto_check, auto-complete conditions |
 | `test_mode.py` | ModeManager: set_mode, tool allowlist (OSCP/CPTS), Metasploit tracking, can_use_ai |
-| `test_parsers.py` | Nmap XML parser, NXC LDAP/shares/RID/null parser, ffuf JSON parser |
+| `test_parsers.py` | Nmap XML parser, NXC LDAP/shares/RID/null parser (uses `add_domain()`), ffuf JSON parser |
 | `test_brute.py` | BruteWrapper: SSH/HTTP-POST command construction and validation |
 | `test_web_subdns.py` | WebFuzzWrapper subdns command construction |
 | `test_git_exposure.py` | Git exposure detection → git-specific suggestion triggers |
@@ -370,3 +384,35 @@ flowchart TD
     API -.-> |Reads| Cheatsheets
     API -.-> |Reads| Methodologies
 ```
+
+---
+
+## 12. Code Intelligence (GitNexus)
+
+The codebase is indexed by [GitNexus](https://github.com/nxpatterns/gitnexus) — a zero-server code intelligence engine that builds a knowledge graph from the source and exposes it via MCP.
+
+### What It Provides
+
+- **Knowledge graph**: 881 nodes, 2,832 edges, 64 functional clusters, 71 execution flows
+- **MCP tools**: `query`, `context`, `impact`, `detect_changes`, `rename`, `cypher`
+- **Claude Code integration**: PreToolUse hooks enrich Grep/Glob/Bash with graph context; 6 agent skills auto-installed
+
+### Common Commands
+
+```bash
+npx gitnexus analyze          # Re-index after major structural changes
+npx gitnexus analyze --force  # Full re-index (ignore cache)
+npx gitnexus status           # Check if index is up-to-date
+npx gitnexus clean            # Delete the local index
+npx gitnexus wiki             # Generate a repository wiki
+```
+
+### Storage
+
+- **Local index**: `.gitnexus/` (gitignored) — LadybugDB graph database + metadata
+- **Global registry**: `~/.gitnexus/registry.json` — enables one MCP server to serve all indexed repos
+- **No network calls**: All indexing and querying is local
+
+### Requirements
+
+- Node.js >= 18 (used via `npx`)

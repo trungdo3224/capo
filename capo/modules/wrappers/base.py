@@ -88,6 +88,8 @@ class BaseWrapper(ABC):
 
     def _output_dir(self) -> Path:
         """Get the scan output directory for the current target."""
+        if state_manager.workspace is None:
+            raise TargetError("No target set. Use: capo target set <IP>")
         return state_manager.workspace / "scans"
 
     def _output_file(self, suffix: str = "") -> Path:

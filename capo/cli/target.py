@@ -32,8 +32,7 @@ def target_set(
         raise typer.Exit(1)
         
     if domain:
-        state_manager.set("domain", domain)
-        state_manager.state.setdefault("domain_info", {})["domain_name"] = domain
+        state_manager.add_domain(domain)
 
     print_success(f"Target set: {ip}")
     if domain:
@@ -95,12 +94,11 @@ def target_set_domain(
     if campaign_manager.active:
         campaign_manager.update_domain_info(domain_name=domain, dc_ip=dc_ip)
     else:
-        state_manager.set("domain", domain)
-        info = state_manager.get("domain_info", {})
-        info["domain_name"] = domain
+        state_manager.add_domain(domain)
         if dc_ip:
+            info = state_manager.get("domain_info", {})
             info["dc_ip"] = dc_ip
-        state_manager.set("domain_info", info)
+            state_manager.set("domain_info", info)
         
     print_success(f"Domain set: {domain}")
 
@@ -117,6 +115,21 @@ def target_set_lhost(
     state_manager.set("lhost", lhost)
     state_manager.set("lport", lport)
     print_success(f"LHOST={lhost}, LPORT={lport}")
+
+
+@target_app.command("add-domain")
+def target_add_domain(
+    domain: str = typer.Argument(..., help="Domain name to add"),
+):
+    """Add an associated domain name to the target."""
+    if not state_manager.target:
+        print_error("No target set.")
+        raise typer.Exit(1)
+    state_manager.add_domain(domain)
+    print_success(f"Added domain: {domain}")
+    domains = state_manager.get("domains", [])
+    if len(domains) > 1:
+        print_info(f"All domains: {', '.join(domains)}")
 
 
 @target_app.command("add-user")

@@ -1,5 +1,6 @@
 """NetExec (nxc) wrapper for SMB/AD enumeration."""
 
+import configparser
 import re
 import sqlite3
 import subprocess
@@ -170,8 +171,7 @@ class NetExecWrapper(BaseWrapper):
                 state_manager.set("hostname", hostname)
             
             if domain:
-                state_manager.set("domain", domain)
-                state_manager.state.setdefault("domain_info", {})["domain_name"] = domain
+                state_manager.add_domain(domain)
                 
             if os_ver:
                 existing_os = state_manager.get("os", "")

@@ -131,7 +131,7 @@ class TestNxcParser:
             nxc.parse_output(result, None)
 
             mock_state.set.assert_any_call("hostname", "FOREST")
-            mock_state.set.assert_any_call("domain", "CORP.LOCAL")
+            mock_state.add_domain.assert_any_call("CORP.LOCAL")
             mock_state.set.assert_any_call("os", "Windows Server")
 
     @patch("capo.modules.wrappers.nxc_wrapper.state_manager")

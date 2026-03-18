@@ -139,7 +139,7 @@ class TestGetVar:
         with patch("capo.config.CAPO_HOME", capo_home), \
              patch("capo.config.WORKSPACES_DIR", capo_home / "workspaces"):
             fresh_manager.set_target("10.10.10.100")
-            fresh_manager.set("domain", "corp.local")
+            fresh_manager.add_domain("corp.local")
             assert fresh_manager.get_var("DOMAIN") == "corp.local"
 
     def test_user_variable_first(self, fresh_manager, capo_home):

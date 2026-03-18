@@ -68,7 +68,8 @@ def print_state_table(state: dict):
     table.add_column("Value", style="green")
 
     table.add_row("Target", state.get("ip", "N/A"))
-    table.add_row("Domain", state.get("domain", "N/A") or "N/A")
+    domains = state.get("domains", [])
+    table.add_row("Domains", ", ".join(domains) if domains else "N/A")
     table.add_row("OS", state.get("os", "N/A") or "N/A")
     table.add_row("Hostname", state.get("hostname", "N/A") or "N/A")
 

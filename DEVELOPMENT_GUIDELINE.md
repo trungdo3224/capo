@@ -45,11 +45,13 @@ CAPO uses `typer` and `rich` for terminal output.
 
 ### State & Campaign Management
 
-- **Never write directly to `_state` dicts**. Always use the defined class methods on `StateManager` or `CampaignManager` (e.g., `add_user()`, `add_port()`). These handle FileLock concurrency, schema migration, and deduplication.
+- **Never write directly to `_state` dicts**. Always use the defined class methods on `StateManager` or `CampaignManager` (e.g., `add_user()`, `add_port()`, `add_domain()`). These handle FileLock concurrency, schema migration, and deduplication.
+- **Domain data**: Use `StateManager.add_domain()` to add domains — never `set("domain", ...)`. State v3 uses a `domains` list; `get("domain")` returns the first entry for backward compatibility.
+- **Access campaign data via public API**: Use `campaign_manager.get(key)` and `campaign_manager.campaign_dir`, not `campaign_manager._state` or `campaign_manager._dir`.
 - **Know the scope**:
-  - `StateManager` → host-specific data (ports, directories, vhosts, scan history)
+  - `StateManager` → host-specific data (ports, directories, vhosts, domains, scan history)
   - `CampaignManager` → engagement-wide data (AD domain, cross-host users, global credentials)
-- **Variable injection**: Fetch injected values via `StateManager.get_var("USERFILE")`, never by manually accessing the list fields.
+- **Variable injection**: Fetch injected values via `StateManager.get_var("USERFILE")`, never by manually accessing the list fields. `{PASSWORD}` is an alias for `{PASS}`.
 
 ### `capo/cli/` vs `capo/modules/`
 
@@ -70,13 +72,13 @@ When creating a new wrapper in `capo/modules/wrappers/`:
 - **Inherit from `BaseWrapper`**. This provides `execute()`, dry-run mode, output file logging, scan history recording, and profile support.
 - **Three-step contract**: 1) Build command, 2) `parse_output()`, 3) push to state. Keep these stages cleanly separated so `parse_output()` can be unit-tested in isolation with sample output strings.
 - **No silent failures**: If a wrapper encounters bad output, log a warning and return empty results — do not crash.
-- **Output directory**: Always write raw tool output to `~/.capo/workspaces/<ip>/scans/`. Use the `output_file` argument of `execute()`.
+- **Output directory**: Always write raw tool output to `~/.capo/workspaces/<ip>/scans/`. Use the `output_file` argument of `execute()`. `BaseWrapper._output_dir()` raises `TargetError` if no workspace is set — callers do not need to guard this themselves.
 
 ## 6. YAML Configuration Conventions
 
 ### Cheatsheets (`core_cheatsheets/`)
 
-- Use standard variable tokens: `{IP}`, `{DOMAIN}`, `{USER}`, `{PASS}`, `{USERFILE}`, `{PASSFILE}`, `{DC_IP}`, `{LHOST}`, `{LPORT}`, `{HOSTNAME}`, `{USERS_FILE}`, `{HASHES_FILE}`.
+- Use standard variable tokens: `{IP}`, `{DOMAIN}`, `{USER}`, `{PASS}`, `{PASSWORD}`, `{USERFILE}`, `{PASSFILE}`, `{DC_IP}`, `{LHOST}`, `{LPORT}`, `{HOSTNAME}`, `{USERS_FILE}`, `{HASHES_FILE}`.
 - Every command entry needs at minimum: `name`, `description`, `command`, `tool`, `tags`.
 - `tags` are used by `fuzzy_search()`; include common synonyms.
 - Custom cheatsheets in `~/.capo/custom_cheatsheets/` override core entries on `name` collision — document this behavior in your YAML.
@@ -91,7 +93,7 @@ When creating a new wrapper in `capo/modules/wrappers/`:
 
 - Use JMESPath expressions for `condition` fields. Test conditions with `jmespath.search()` locally before adding.
 - `require_ports` is a convenience shorthand for "any of these ports open"; use it instead of a JMESPath port check where possible.
-- `require_state` maps to top-level state fields (e.g., `{"domain": true}` means `state["domain"]` is truthy).
+- `require_state` maps to semantic conditions: `has_domain` checks `state["domains"]` (v3) with fallback to `state["domain"]` (v2 compat); `has_valid_user` checks `state["users"]` or `state["credentials"]`; `has_valid_password` checks `state["credentials"]`.
 - Keep `objective` strings short — they appear in the daemon's Rich table.
 
 ### Custom Triggers (`~/.capo/custom_triggers.yaml`)

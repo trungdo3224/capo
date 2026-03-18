@@ -33,6 +33,14 @@ class CampaignManager:
     def active(self) -> bool:
         return self._name is not None
 
+    @property
+    def campaign_dir(self) -> Path | None:
+        return self._dir
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get a value from campaign state by key."""
+        return self._state.get(key, default)
+
     def _state_file(self) -> Path:
         if not self._dir:
             raise RuntimeError("Campaign not set")
