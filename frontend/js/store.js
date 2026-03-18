@@ -4,6 +4,26 @@
  */
 import { ref, computed } from 'vue'
 
+// ── Theme ────────────────────────────────────────────────────────────────────
+const THEMES = ['dark', 'dim', 'light']
+const savedTheme = localStorage.getItem('capo-theme')
+export const currentTheme = ref(THEMES.includes(savedTheme) ? savedTheme : 'dark')
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme)
+  document.documentElement.setAttribute('data-bs-theme', theme === 'light' ? 'light' : 'dark')
+}
+
+export function setTheme(theme) {
+  if (!THEMES.includes(theme)) return
+  currentTheme.value = theme
+  localStorage.setItem('capo-theme', theme)
+  applyTheme(theme)
+}
+
+// Apply on load
+applyTheme(currentTheme.value)
+
 // ── Active view ──────────────────────────────────────────────────────────────
 export const currentView = ref('cheatsheets')
 

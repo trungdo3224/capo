@@ -1,5 +1,5 @@
 import { defineComponent } from 'vue'
-import { currentView, suggestionCount } from '../store.js'
+import { currentView, suggestionCount, currentTheme, setTheme } from '../store.js'
 
 export default defineComponent({
   name: 'Sidebar',
@@ -12,11 +12,17 @@ export default defineComponent({
       { view: 'suggestions',  icon: 'fa-lightbulb',        label: 'Suggestions' },
     ]
 
+    const themes = [
+      { key: 'dark',  icon: 'fa-moon',           tip: 'Dark' },
+      { key: 'dim',   icon: 'fa-cloud-moon',     tip: 'Dim' },
+      { key: 'light', icon: 'fa-sun',            tip: 'Light' },
+    ]
+
     function switchView(view) {
       currentView.value = view
     }
 
-    return { currentView, suggestionCount, navItems, switchView }
+    return { currentView, suggestionCount, navItems, switchView, currentTheme, setTheme, themes }
   },
   template: `
     <div class="col-md-2 sidebar d-flex flex-column">
@@ -38,8 +44,21 @@ export default defineComponent({
         </li>
       </ul>
 
-      <div class="mt-auto text-muted small text-center pt-3 border-top" style="border-color:var(--border)!important;">
-        <i class="fa-solid fa-shield-halved"></i> Active Directory · OSCP · CPTS
+      <div class="mt-auto pt-3 border-top" style="border-color:var(--border)!important;">
+        <div class="d-flex justify-content-center mb-2">
+          <div class="theme-switcher">
+            <button
+              v-for="t in themes" :key="t.key"
+              class="theme-btn"
+              :class="{ active: currentTheme === t.key }"
+              :title="t.tip"
+              @click="setTheme(t.key)"
+            ><i class="fa-solid" :class="t.icon"></i></button>
+          </div>
+        </div>
+        <div class="text-muted small text-center">
+          <i class="fa-solid fa-shield-halved"></i> Active Directory · OSCP · CPTS
+        </div>
       </div>
     </div>
   `,

@@ -88,6 +88,22 @@ export default defineComponent({
     const editRelationship = ref('')
     const editEdgeLabel = ref('')
 
+    // ── Theme-aware canvas colors (read from CSS variables) ────────────
+    let themeColors = { text: [220,220,230], textMuted: [142,142,162], edge: [88,166,255], highlight: [255,255,255] }
+    function readThemeColors() {
+      const s = getComputedStyle(document.documentElement)
+      const parse = (v) => {
+        const hex = (s.getPropertyValue(v) || '').trim().replace('#', '')
+        if (hex.length === 6) return [parseInt(hex.substring(0,2),16), parseInt(hex.substring(2,4),16), parseInt(hex.substring(4,6),16)]
+        return null
+      }
+      themeColors.text = parse('--text') || [220,220,230]
+      themeColors.textMuted = parse('--text-muted') || [142,142,162]
+      themeColors.accent = parse('--accent') || [34,211,238]
+      // highlight: use text color for selected/hovered borders (visible on any bg)
+      themeColors.highlight = themeColors.text
+    }
+
     // ── Camera ────────────────────────────────────────────────────────────
     let camX = 0, camY = 0, camZoom = 1
     let canvasW = 0, canvasH = 0
@@ -214,6 +230,7 @@ export default defineComponent({
     function draw() {
       if (!ctx) return
       simulate()
+      readThemeColors()
       ctx.clearRect(0, 0, canvasW, canvasH)
 
       const nodes = graphData.value.nodes
@@ -260,7 +277,8 @@ export default defineComponent({
         }
         if (selEdge && e.id === selEdge.id) { alpha = 1; lineW = 2.5 }
 
-        ctx.strokeStyle = `rgba(88, 166, 255, ${alpha})`
+        const [er, eg, eb] = themeColors.accent
+        ctx.strokeStyle = `rgba(${er},${eg},${eb},${alpha})`
         ctx.lineWidth = lineW
         ctx.beginPath()
         ctx.moveTo(sx, sy)
@@ -274,7 +292,7 @@ export default defineComponent({
           const ax = tx - Math.cos(angle) * r
           const ay = ty - Math.sin(angle) * r
           const aSize = 6 + lineW
-          ctx.fillStyle = `rgba(88, 166, 255, ${alpha})`
+          ctx.fillStyle = `rgba(${er},${eg},${eb},${alpha})`
           ctx.beginPath()
           ctx.moveTo(ax, ay)
           ctx.lineTo(ax - aSize * Math.cos(angle - 0.4), ay - aSize * Math.sin(angle - 0.4))
@@ -287,7 +305,8 @@ export default defineComponent({
         if (showLabels.value && e.label && camZoom > 0.5) {
           const mx = (sx + tx) / 2, my = (sy + ty) / 2
           ctx.font = `${Math.max(9, 10 * camZoom)}px 'JetBrains Mono', monospace`
-          ctx.fillStyle = `rgba(142, 142, 162, ${alpha})`
+          const [mr, mg, mb] = themeColors.textMuted
+          ctx.fillStyle = `rgba(${mr},${mg},${mb},${alpha})`
           ctx.textAlign = 'center'
           ctx.fillText(e.label, mx, my - 4)
         }
@@ -297,7 +316,8 @@ export default defineComponent({
       if (connectLine) {
         const [sx, sy] = toScreen(connectLine.sx, connectLine.sy)
         ctx.setLineDash([6, 4])
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)'
+        const [cr, cg, ccb] = themeColors.accent
+        ctx.strokeStyle = `rgba(${cr},${cg},${ccb},0.7)`
         ctx.lineWidth = 2
         ctx.beginPath()
         ctx.moveTo(sx, sy)
@@ -328,7 +348,9 @@ export default defineComponent({
         // Border
         const isSelected = sel && sel.id === n.id
         const isHovered = hov && hov.id === n.id
-        ctx.strokeStyle = isSelected ? '#fff' : isHovered ? '#fff' : hexToRgba(color, alpha * 0.4)
+        const [hr, hg, hb] = themeColors.highlight
+        const highlightC = `rgba(${hr},${hg},${hb},${alpha})`
+        ctx.strokeStyle = isSelected ? highlightC : isHovered ? highlightC : hexToRgba(color, alpha * 0.4)
         ctx.lineWidth = isSelected ? 2.5 : isHovered ? 2 : 1
         ctx.stroke()
 
@@ -345,7 +367,8 @@ export default defineComponent({
         if (connectSource.value && connectSource.value.id === n.id) {
           ctx.beginPath()
           ctx.arc(sx, sy, r + 6, 0, Math.PI * 2)
-          ctx.strokeStyle = 'rgba(34, 211, 238, 0.6)'
+          const [gr, gg, gb] = themeColors.accent
+          ctx.strokeStyle = `rgba(${gr},${gg},${gb},0.6)`
           ctx.lineWidth = 2
           ctx.stroke()
         }
@@ -354,7 +377,8 @@ export default defineComponent({
         if (showLabels.value && camZoom > 0.4) {
           const fontSize = Math.max(9, 11 * camZoom)
           ctx.font = `500 ${fontSize}px 'DM Sans', sans-serif`
-          ctx.fillStyle = `rgba(220, 220, 230, ${alpha})`
+          const [tr, tg, tb] = themeColors.text
+          ctx.fillStyle = `rgba(${tr},${tg},${tb},${alpha})`
           ctx.textAlign = 'center'
           ctx.fillText(n.label, sx, sy - r - 4)
         }

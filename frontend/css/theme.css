@@ -1,6 +1,7 @@
-/* ─── Design System: Precision Utility Dark ─── */
-:root {
-  /* New token set */
+/* ─── Design System: Precision Utility ─── */
+
+/* ── Dark (default) ── */
+:root, [data-theme="dark"] {
   --bg:            #08080b;
   --surface:       #0e0e13;
   --surface-hover: #14141b;
@@ -20,6 +21,11 @@
   --amber:  #fbbf24;
   --purple: #a78bfa;
 
+  --cmd-bg:        #020205;
+  --cmd-bg-hover:  #06060c;
+  --overlay-bg:    rgba(14, 14, 19, 0.92);
+  --btn-text:      #000;
+
   /* Legacy aliases — used by inline styles throughout the HTML */
   --capo-cyan:       var(--accent);
   --capo-cyan-hover: var(--accent-hover);
@@ -30,7 +36,93 @@
   --capo-text:       var(--text);
 }
 
+/* ── Dim (softer dark) ── */
+[data-theme="dim"] {
+  --bg:            #1a1b23;
+  --surface:       #22232e;
+  --surface-hover: #2a2b38;
+  --border:        #333442;
+  --border-dim:    #292a36;
+
+  --text:          #e0e0ea;
+  --text-muted:    #7e7e94;
+  --text-dim:      #50506a;
+
+  --accent:        #22d3ee;
+  --accent-hover:  #0ea5e9;
+  --accent-dim:    rgba(34, 211, 238, 0.09);
+
+  --green:  #34d399;
+  --red:    #f87171;
+  --amber:  #fbbf24;
+  --purple: #a78bfa;
+
+  --cmd-bg:        #141520;
+  --cmd-bg-hover:  #1a1b28;
+  --overlay-bg:    rgba(26, 27, 35, 0.94);
+  --btn-text:      #000;
+}
+
+/* ── Light ── */
+[data-theme="light"] {
+  --bg:            #f4f4f8;
+  --surface:       #ffffff;
+  --surface-hover: #ededf3;
+  --border:        #d5d5e0;
+  --border-dim:    #e2e2ec;
+
+  --text:          #1a1a2e;
+  --text-muted:    #64648a;
+  --text-dim:      #a0a0b8;
+
+  --accent:        #0891b2;
+  --accent-hover:  #0e7490;
+  --accent-dim:    rgba(8, 145, 178, 0.08);
+
+  --green:  #059669;
+  --red:    #dc2626;
+  --amber:  #d97706;
+  --purple: #7c3aed;
+
+  --cmd-bg:        #eeeef4;
+  --cmd-bg-hover:  #e4e4ed;
+  --overlay-bg:    rgba(255, 255, 255, 0.95);
+  --btn-text:      #fff;
+}
+
 * { box-sizing: border-box; }
+
+/* Theme transition */
+body, .sidebar, .capo-card, .file-card, .toast, .suggestion-card,
+.form-control, .form-select, .nav-pills .nav-link, .graph-panel {
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+/* ── Theme Switcher ── */
+.theme-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+}
+.theme-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  line-height: 1;
+}
+.theme-btn:hover { color: var(--text-muted); }
+.theme-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
 
 body {
   background: var(--bg);
@@ -165,13 +257,13 @@ body {
   font-family: 'JetBrains Mono', monospace !important;
   font-size: 0.79rem !important;
   color: var(--green) !important;
-  background: #020205 !important;
+  background: var(--cmd-bg) !important;
 }
 
 /* ── Buttons ── */
 .btn-capo {
   background: var(--accent);
-  color: #000;
+  color: var(--btn-text);
   font-weight: 600;
   font-size: 0.79rem;
   border: none;
@@ -181,7 +273,7 @@ body {
   letter-spacing: 0.01em;
 }
 
-.btn-capo:hover { background: var(--accent-hover); color: #000; }
+.btn-capo:hover { background: var(--accent-hover); color: var(--btn-text); }
 
 .btn-capo-outline {
   background: transparent;
@@ -237,7 +329,7 @@ body {
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.775rem;
   color: var(--green);
-  background: #020205;
+  background: var(--cmd-bg);
   padding: 0.3rem 0.7rem;
   border-radius: 3px;
   cursor: pointer;
@@ -247,7 +339,7 @@ body {
   gap: 0.5rem;
 }
 
-.cmd-line:hover { background: #06060c; }
+.cmd-line:hover { background: var(--cmd-bg-hover); }
 .cmd-line .copy-icon { color: var(--text-dim); font-size: 0.68rem; flex-shrink: 0; }
 
 /* ── Badges ── */
@@ -433,7 +525,7 @@ h6 { font-size: 0.8125rem; }
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(14, 14, 19, 0.92);
+  background: var(--overlay-bg);
   border: 1px solid var(--accent);
   color: var(--accent);
   padding: 6px 16px;
@@ -475,3 +567,47 @@ h6 { font-size: 0.8125rem; }
 .graph-stats strong { color: var(--text); }
 .graph-panel .btn:focus { box-shadow: none; }
 .graph-panel .btn { transition: opacity 0.12s, background 0.12s; }
+
+/* ─── Light-theme overrides for hardcoded rgba badges/buttons ─── */
+[data-theme="light"] .btn-capo-outline {
+  border-color: rgba(8, 145, 178, 0.3);
+}
+[data-theme="light"] .btn-capo-outline:hover {
+  border-color: rgba(8, 145, 178, 0.55);
+}
+[data-theme="light"] .badge-accent,
+[data-theme="light"] .port-badge,
+[data-theme="light"] .count-badge,
+[data-theme="light"] .nav-badge {
+  background: rgba(8, 145, 178, 0.1);
+}
+[data-theme="light"] .badge-purple,
+[data-theme="light"] .count-badge-purple {
+  background: rgba(124, 58, 237, 0.1);
+}
+[data-theme="light"] .badge-red,
+[data-theme="light"] .count-badge-red,
+[data-theme="light"] .badge-p1 {
+  background: rgba(220, 38, 38, 0.08);
+  border-color: rgba(220, 38, 38, 0.2);
+}
+[data-theme="light"] .badge-green,
+[data-theme="light"] .bg-success {
+  background: rgba(5, 150, 105, 0.08) !important;
+}
+[data-theme="light"] .badge-amber,
+[data-theme="light"] .badge-p2 {
+  background: rgba(217, 119, 6, 0.08);
+  border-color: rgba(217, 119, 6, 0.2);
+}
+[data-theme="light"] .bg-danger {
+  background: rgba(220, 38, 38, 0.06) !important;
+}
+[data-theme="light"] .form-control:focus,
+[data-theme="light"] .form-select:focus {
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.15);
+}
+[data-theme="light"] .graph-panel .form-select:focus,
+[data-theme="light"] .graph-panel .form-control:focus {
+  box-shadow: 0 0 0 2px rgba(8, 145, 178, 0.12);
+}
