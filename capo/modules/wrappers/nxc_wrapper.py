@@ -125,9 +125,20 @@ class NetExecWrapper(BaseWrapper):
         ]
         self.execute(cmd, output_file=out.with_suffix(".txt"))
 
+    @staticmethod
+    def _active_workspace() -> str:
+        """Read the active workspace from nxc.conf, default to 'default'."""
+        conf_path = Path.home() / ".nxc" / "nxc.conf"
+        if conf_path.exists():
+            cp = configparser.ConfigParser()
+            cp.read(conf_path)
+            return cp.get("nxc", "workspace", fallback="default")
+        return "default"
+
     def _query_nxc_db(self, db_name: str, query: str, params: tuple = ()) -> list:
         """Helper to query a NetExec workspace SQLite database."""
-        db_path = Path.home() / ".nxc" / "workspaces" / "default" / f"{db_name}.db"
+        workspace = self._active_workspace()
+        db_path = Path.home() / ".nxc" / "workspaces" / workspace / f"{db_name}.db"
         if not db_path.exists():
             return []
             

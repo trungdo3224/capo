@@ -40,7 +40,7 @@ class TestGlobalOptions:
         result = runner.invoke(_app(), ["--help"])
         assert result.exit_code == 0
         for group in ("target", "scan", "nxc", "brute", "web", "state",
-                      "mode", "report", "triggers", "methodology", "daemon"):
+                      "mode", "report", "triggers", "methodology"):
             assert group in result.output
 
     def test_help_lists_standalone_commands(self):

@@ -99,9 +99,9 @@ def _inject(text: str, sm: StateManager) -> str:
     return text
 
 
-def _load_daemon_rules():
+def _load_suggestion_rules():
     """Load SuggestionRule objects from core_rules/."""
-    from capo.modules.daemon import SuggestionRule
+    from capo.modules.suggestion_rules import SuggestionRule
     rules = []
     rules_dir = Path(__file__).parent / "core_rules"
     if not rules_dir.exists():
@@ -194,8 +194,8 @@ def _build_suggestions(sm: StateManager) -> dict:
     except Exception:
         pass
 
-    # --- 3. Rule-based suggestions (daemon rules) ---
-    rules = _load_daemon_rules()
+    # --- 3. Rule-based suggestions (YAML rules) ---
+    rules = _load_suggestion_rules()
     rule_suggestions = []
     for rule in sorted(rules, key=lambda r: str(r.priority)):
         if rule.evaluate(state_data):

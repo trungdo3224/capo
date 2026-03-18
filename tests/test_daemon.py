@@ -1,11 +1,11 @@
-"""Tests for the YAML daemon evaluation engine."""
+"""Tests for the YAML suggestion rule evaluation engine."""
 
 import pytest
 
-from capo.modules.daemon import SuggestionRule
+from capo.modules.suggestion_rules import SuggestionRule
 
 
-class TestDaemonRuleEvaluation:
+class TestSuggestionRuleEvaluation:
     def test_legacy_port_and_state_conditions(self):
         """Test the old require_ports and require_state conditions."""
         rule_data = {
@@ -17,13 +17,13 @@ class TestDaemonRuleEvaluation:
             "command_template": "echo {IP}"
         }
         rule = SuggestionRule(rule_data)
-        
+
         # Missing port and domain
         assert not rule.evaluate({"ports": []})
-        
+
         # Has port, missing domain
         assert not rule.evaluate({"ports": [{"port": 80, "protocol": "tcp"}], "domain": ""})
-        
+
         # Met conditions
         assert rule.evaluate({"ports": [{"port": 80, "protocol": "tcp"}], "domain": "test.local"})
 
@@ -37,10 +37,10 @@ class TestDaemonRuleEvaluation:
             "command_template": "echo {USERFILE}"
         }
         rule = SuggestionRule(rule_data)
-        
+
         # No users
         assert not rule.evaluate({"users": []})
-        
+
         # User exists
         assert rule.evaluate({"users": ["root"]})
 
@@ -54,19 +54,19 @@ class TestDaemonRuleEvaluation:
             "command_template": "echo complex"
         }
         rule = SuggestionRule(rule_data)
-        
+
         # Missing domain, has port 80
         assert not rule.evaluate({
             "ports": [{"port": 80}],
             "domain": None
         })
-        
+
         # Missing port 80, has domain
         assert not rule.evaluate({
             "ports": [{"port": 443}],
             "domain": "test.local"
         })
-        
+
         # Both conditions met
         assert rule.evaluate({
             "ports": [{"port": 80}, {"port": 443}],
@@ -83,7 +83,7 @@ class TestDaemonRuleEvaluation:
             "command_template": "echo oops"
         }
         rule = SuggestionRule(rule_data)
-        
+
         # Should return False despite invalid query
         assert not rule.evaluate({"users": ["root"]})
 
@@ -95,9 +95,9 @@ class TestDaemonRuleEvaluation:
             "command_template": "spray -P {PASSFILE}"
         }
         rule = SuggestionRule(rule_data)
-        
+
         # Should fail because {PASSFILE} requires credentials in state
         assert not rule.evaluate({"users": ["admin"]})
-        
+
         # Now has credentials
         assert rule.evaluate({"credentials": [{"username": "admin", "password": "password"}]})

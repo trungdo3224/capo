@@ -44,7 +44,6 @@ from capo.cli.mode_cmds import mode_app
 from capo.cli.report import report_app
 from capo.cli.triggers_cmds import triggers_app
 from capo.cli.methodology_cmds import methodology_app
-from capo.cli.daemon_cmds import daemon_app
 from capo.cli.studio_cmds import app as studio_app
 from capo.cli.kerberos_cmds import kerberos_app
 
@@ -59,7 +58,6 @@ app.add_typer(mode_app, name="mode")
 app.add_typer(report_app, name="report")
 app.add_typer(triggers_app, name="triggers")
 app.add_typer(methodology_app, name="methodology")
-app.add_typer(daemon_app, name="daemon")
 app.add_typer(studio_app, name="studio")
 
 
