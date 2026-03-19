@@ -240,7 +240,7 @@ class NetExecWrapper(BaseWrapper):
 
         if users and not creds:
             suggestions.append(
-                (f"Found {len(users)} users - Try password spray",
+                (f"Found {len(users)} users (view: capo state users) - Try password spray",
                  "capo nxc spray --password 'Welcome1'")
             )
 

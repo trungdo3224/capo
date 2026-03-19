@@ -53,12 +53,27 @@ def register_cheatsheet_commands(app: typer.Typer):
         display_cheatsheet_results(results, copy)
 
     @app.command("categories")
-    def list_categories():
-        """List all available cheatsheet categories."""
+    def list_categories(
+        category: str | None = typer.Argument(None, help="Show commands in a specific category"),
+        copy: bool = typer.Option(False, "--copy", help="Copy selected command to clipboard"),
+    ):
+        """List all categories, or show commands in a specific category."""
         from rich.table import Table
 
         from capo.modules.cheatsheet.engine import cheatsheet_engine
         cheatsheet_engine.load_all()
+
+        if category:
+            # Find matching category (case-insensitive, partial match)
+            matched = [c for c in cheatsheet_engine.categories if category.lower() in c.lower()]
+            if not matched:
+                print_warning(f"No category matching '{category}'. Run 'capo categories' to see all.")
+                return
+            for cat in matched:
+                entries = cheatsheet_engine.get_by_category(cat)
+                if entries:
+                    display_cheatsheet_results(entries, copy)
+            return
 
         table = Table(title="Cheatsheet Categories", border_style="cyan")
         table.add_column("Category", style="bold cyan")

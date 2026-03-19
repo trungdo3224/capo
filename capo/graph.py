@@ -286,6 +286,13 @@ class GraphManager:
                 )
                 self._data["nodes"].append(node)
                 changed = True
+                # Auto-edge: target → user
+                if target_node:
+                    edge = self._make_edge(
+                        source_id=target_node["id"], target_id=node["id"],
+                        label="", relationship="has_user",
+                    )
+                    self._data["edges"].append(edge)
 
         # --- Credentials → credential nodes ---
         for cred in state_data.get("credentials", []):

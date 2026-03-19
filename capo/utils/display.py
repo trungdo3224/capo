@@ -86,11 +86,34 @@ def print_state_table(state: dict):
     if vhosts:
         table.add_row("vHosts", ", ".join(vhosts))
 
-    table.add_row("Users", str(len(state.get("users", []))))
-    table.add_row("Credentials", str(len(state.get("credentials", []))))
-    table.add_row("Hashes", str(len(state.get("hashes", []))))
-    table.add_row("Web Dirs", str(len(state.get("directories", []))))
-    table.add_row("Shares", str(len(state.get("shares", []))))
+    users = state.get("users", [])
+    if users:
+        table.add_row("Users", ", ".join(users) if len(users) <= 10 else f"{', '.join(users[:10])} … ({len(users)} total)")
+    else:
+        table.add_row("Users", "0")
+
+    creds = state.get("credentials", [])
+    if creds:
+        cred_strs = [f"{c.get('username', '?')}:{c.get('service', '?')}" for c in creds]
+        table.add_row("Credentials", ", ".join(cred_strs) if len(cred_strs) <= 5 else f"{', '.join(cred_strs[:5])} … ({len(creds)} total)")
+    else:
+        table.add_row("Credentials", "0")
+
+    hashes = state.get("hashes", [])
+    if hashes:
+        hash_strs = [h.get("username", "?") + ":" + h.get("type", "?") if isinstance(h, dict) else str(h) for h in hashes]
+        table.add_row("Hashes", ", ".join(hash_strs) if len(hash_strs) <= 5 else f"{', '.join(hash_strs[:5])} … ({len(hashes)} total)")
+    else:
+        table.add_row("Hashes", "0")
+
+    shares = state.get("shares", [])
+    if shares:
+        table.add_row("Shares", ", ".join(shares) if len(shares) <= 10 else f"{', '.join(shares[:10])} … ({len(shares)} total)")
+    else:
+        table.add_row("Shares", "0")
+
+    dirs = state.get("directories", [])
+    table.add_row("Web Dirs", str(len(dirs)))
 
     console.print(table)
 
