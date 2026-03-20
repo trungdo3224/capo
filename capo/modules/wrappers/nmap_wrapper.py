@@ -176,6 +176,18 @@ class NmapWrapper(BaseWrapper):
                     extra = service_el.get("extrainfo", "")
                     version = " ".join(filter(None, [product, ver, extra]))
 
+                # Preserve better service name when -sV returns "tcpwrapped"
+                existing_ports = state_manager.get("ports", [])
+                existing = next(
+                    (p for p in existing_ports
+                     if p.get("port") == portid and p.get("protocol") == protocol),
+                    None,
+                )
+                if (service_name in ("tcpwrapped", "")
+                        and existing
+                        and existing.get("service", "") not in ("tcpwrapped", "")):
+                    service_name = existing["service"]
+
                 state_manager.add_port(portid, protocol, service_name, version, port_state)
                 port_count += 1
 

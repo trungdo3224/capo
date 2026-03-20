@@ -53,7 +53,7 @@ def target_show():
     if not state_manager.target:
         print_error("No target set. Use: capo target set <IP>")
         raise typer.Exit(1)
-    print_state_table(state_manager.state)
+    print_state_table(state_manager.state, mgr=state_manager)
 
 
 @target_app.command("campaign")

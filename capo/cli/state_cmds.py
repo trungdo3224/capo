@@ -28,7 +28,7 @@ def state_show(
     if as_json:
         console.print_json(state_manager.export_state())
     else:
-        print_state_table(state_manager.state)
+        print_state_table(state_manager.state, mgr=state_manager)
 
 
 @state_app.command("ports")

@@ -61,8 +61,15 @@ def print_suggestion(title: str, commands: list[str]):
     ))
 
 
-def print_state_table(state: dict):
-    """Print a formatted state summary table."""
+def print_state_table(state: dict, mgr=None):
+    """Print a formatted state summary table.
+
+    When *mgr* (a StateManager) is provided, campaign-merged data is used
+    for users, credentials, hashes, shares, and domain_info so the summary
+    stays consistent with ``capo state users`` etc.
+    """
+    _get = mgr.get if mgr is not None else state.get
+
     table = Table(title="Target State Summary", border_style="cyan")
     table.add_column("Property", style="bold white")
     table.add_column("Value", style="green")
@@ -78,37 +85,47 @@ def print_state_table(state: dict):
     port_str = ", ".join(f"{p['port']}/{p['protocol']}" for p in open_ports) or "None"
     table.add_row("Open Ports", port_str)
 
+    # Services breakdown (port → service name)
+    svc_parts = []
+    for p in sorted(open_ports, key=lambda x: x.get("port", 0)):
+        svc = p.get("service", "")
+        if svc and svc != "tcpwrapped":
+            svc_parts.append(f"{p['port']}/{svc}")
+    if svc_parts:
+        table.add_row("Services", ", ".join(svc_parts))
+
     subdomains = state.get("subdomains", [])
     if subdomains:
         table.add_row("Subdomains", ", ".join(subdomains))
-        
+
     vhosts = state.get("vhosts", [])
     if vhosts:
         table.add_row("vHosts", ", ".join(vhosts))
 
-    users = state.get("users", [])
+    users = _get("users", [])
     if users:
         table.add_row("Users", ", ".join(users) if len(users) <= 10 else f"{', '.join(users[:10])} … ({len(users)} total)")
     else:
         table.add_row("Users", "0")
 
-    creds = state.get("credentials", [])
+    creds = _get("credentials", [])
     if creds:
         cred_strs = [f"{c.get('username', '?')}:{c.get('service', '?')}" for c in creds]
         table.add_row("Credentials", ", ".join(cred_strs) if len(cred_strs) <= 5 else f"{', '.join(cred_strs[:5])} … ({len(creds)} total)")
     else:
         table.add_row("Credentials", "0")
 
-    hashes = state.get("hashes", [])
+    hashes = _get("hashes", [])
     if hashes:
         hash_strs = [h.get("username", "?") + ":" + h.get("type", "?") if isinstance(h, dict) else str(h) for h in hashes]
         table.add_row("Hashes", ", ".join(hash_strs) if len(hash_strs) <= 5 else f"{', '.join(hash_strs[:5])} … ({len(hashes)} total)")
     else:
         table.add_row("Hashes", "0")
 
-    shares = state.get("shares", [])
+    shares = _get("shares", [])
     if shares:
-        table.add_row("Shares", ", ".join(shares) if len(shares) <= 10 else f"{', '.join(shares[:10])} … ({len(shares)} total)")
+        share_strs = [s["name"] if isinstance(s, dict) else str(s) for s in shares]
+        table.add_row("Shares", ", ".join(share_strs) if len(share_strs) <= 10 else f"{', '.join(share_strs[:10])} … ({len(shares)} total)")
     else:
         table.add_row("Shares", "0")
 
