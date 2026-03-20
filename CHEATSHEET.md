@@ -71,7 +71,16 @@ capo session show
 
 ## Session Management (`capo session`)
 
-Named engagement contexts with full command tracking in SQLite. Every `capo scan/nxc/web/brute/kerberos` command is auto-recorded.
+Named engagement contexts with full command tracking in SQLite.
+
+**Auto-recording:** Capo wrapper commands (`scan`, `nxc`, `web`, `brute`, `kerberos`) are always auto-recorded. Enable the **shell hook** to also capture external pentest tools (nmap, ffuf, hydra, evil-winrm, etc.):
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc for permanent activation
+eval "$(capo session hook)"
+```
+
+The hook recognizes 100+ pentest tools (see `capo/shell/pentest_tools.txt`). Add custom tools to `~/.capo/pentest_tools.txt`. Linux system commands (ls, cd, cat, etc.) are **not** recorded.
 
 | Command | Description | Example |
 | :--- | :--- | :--- |
@@ -83,6 +92,7 @@ Named engagement contexts with full command tracking in SQLite. Every `capo scan
 | `commands` | List commands in active session | `capo session commands --key --tool nmap` |
 | `log` | Manually record a command run outside capo | `capo session log "ssh user@10.10.10.161"` |
 | `mark` | Mark a command as key step and/or finding | `capo session mark 3 --key --finding "Got shell"` |
+| `hook` | Output shell hook script for auto-recording | `eval "$(capo session hook)"` |
 | `findings` | List all findings in active session | `capo session findings` |
 
 ```bash
@@ -221,6 +231,83 @@ capo kerberos wmiexec -u Administrator -H <hash>
 # DCSync attack
 capo kerberos dcsync -u admin -p pass --dump-user krbtgt
 ```
+
+## Privilege Escalation
+
+Available as methodologies (`capo methodology start linux-privesc` / `windows-privesc`) and cheatsheet lookups (`capo query privesc-linux` / `capo query privesc-windows`).
+
+### Linux PE Quick Reference
+
+| Step | What to Check | Key Commands |
+| :--- | :--- | :--- |
+| Situational Awareness | System info, users, network | `id && whoami`, `uname -a`, `ip addr` |
+| Environment Enum | PATH, env vars, shells, routes | `env`, `echo $PATH`, `cat /etc/shells`, `route -n` |
+| Restricted Shell Escape | rbash/rksh/rzsh detection + escape | `echo $0`, vi `:set shell=/bin/bash :shell`, `awk 'BEGIN{system()}'` |
+| Sudo Permissions | NOPASSWD, env_keep, GTFOBins | `sudo -l` |
+| SUID/SGID | Abusable setuid binaries | `find / -perm -4000 -type f 2>/dev/null` |
+| PATH Abuse | Writable dirs in PATH, relative calls in SUID | `echo $PATH`, `strings <suid_binary>` |
+| Cron Jobs | Writable cron scripts, wildcard abuse | `cat /etc/crontab`, `./pspy64` |
+| Wildcard Abuse | tar checkpoint injection in cron | `echo "" > '--checkpoint-action=exec=shell.sh'` |
+| Privileged Groups | docker, lxd, disk, adm, video | `id`, `docker run -v /:/mnt ...`, `debugfs /dev/sda1` |
+| Capabilities | cap_setuid, cap_dac_override, cap_sys_admin | `getcap -r / 2>/dev/null` |
+| Vulnerable Services | Screen 4.5.0, outdated daemons | `dpkg -l`, `searchsploit <service> <version>` |
+| Logrotate | Race condition with logrotten | `logrotate --version`, find writable `.log` files |
+| Credentials | Passwords, keys, tokens in configs | `grep -ri password /etc/`, `ls -la /home/*/.ssh/` |
+| NFS no_root_squash | Create SUID binary via NFS mount | `showmount -e <target>`, `cat /etc/exports` |
+| Tmux/Screen Hijack | Shared session sockets | `tmux ls`, `ps aux \| grep tmux` |
+| Shared Library Hijack | LD_PRELOAD, RUNPATH, missing .so | `sudo -l` (env_keep), `strace <binary>`, `readelf -d` |
+| Python Library Hijack | Writable sys.path, PYTHONPATH | `python3 -c 'import sys; print(sys.path)'` |
+| Container Escapes | Docker socket, privileged mode, K8s | `cat /proc/1/cgroup`, `ls -la /var/run/docker.sock` |
+| Kernel/CVE Exploits | Dirty Pipe, PwnKit, Baron Samedit | `uname -r`, `sudo --version`, `pkexec --version` |
+| Automated Enum | LinPEAS for comprehensive sweep | `./linpeas.sh -a \| tee linpeas_output.txt` |
+
+```bash
+# Quick PE enumeration one-liner
+id; sudo -l; find / -perm -4000 -type f 2>/dev/null; getcap -r / 2>/dev/null; cat /etc/crontab; ss -tlnp
+
+# Key CVE version checks
+sudo --version        # CVE-2021-3156 (<1.9.5p2), CVE-2019-14287 (<1.8.28)
+pkexec --version      # CVE-2021-4034 PwnKit
+uname -r              # CVE-2022-0847 Dirty Pipe (5.8-5.16.11)
+```
+
+### Windows PE Quick Reference
+
+| Step | What to Check | Key Commands |
+| :--- | :--- | :--- |
+| Situational Awareness | User context, system info, groups | `whoami /all`, `systeminfo`, `net localgroup` |
+| Service Permissions | Writable service binaries/configs | `accesschk.exe -uwcqv * *`, `SharpUp.exe audit` |
+| Weak ACLs | Writable Program Files, service binaries | `icacls "C:\Program Files\*" /T /C` |
+| Unquoted Paths | Service paths with spaces | `wmic service get name,pathname,startmode` |
+| DLL Hijacking | Missing DLLs in search path | `procmon.exe` (filter NAME NOT FOUND .dll) |
+| Scheduled Tasks | Abusable task binaries | `schtasks /query /fo LIST /v` |
+| Credentials | Stored creds, registry, history, configs | `cmdkey /list`, `type ...ConsoleHost_history.txt` |
+| Browser/App Creds | Chrome, PuTTY, FileZilla, etc. | `SharpChrome.exe logins`, `LaZagne.exe all` |
+| AlwaysInstallElevated | MSI install as SYSTEM | `reg query HKLM\...\Installer /v AlwaysInstallElevated` |
+| Token Privileges | SeImpersonate → Potato attacks | `whoami /priv`, `PrintSpoofer.exe`, `GodPotato.exe` |
+| SeDebugPrivilege | LSASS memory dump | `procdump.exe -ma lsass.exe lsass.dmp` |
+| SeTakeOwnership | Take ownership of protected files | `takeown /f <file>`, `icacls <file> /grant <user>:F` |
+| SeBackupPrivilege | Copy SAM/SYSTEM/NTDS.dit | `reg save HKLM\SAM sam.bak`, `secretsdump.py` |
+| Built-in Groups | DnsAdmins, Server Operators, Backup Ops | `dnscmd /config /serverlevelplugindll`, `sc config` |
+| UAC Bypass | Elevated shell without prompt | `fodhelper.exe` method, `UACME` |
+| Kernel Exploits | Missing patches → EoP | `wes.py systeminfo.txt`, `Watson.exe` |
+| Vulnerable Software | Third-party service exploits | `wmic product get name,version`, `searchsploit` |
+| User Interaction | SCF/URL file attacks, traffic capture | SCF in writable share → Responder captures NTLMv2 |
+| Pillaging | Post-compromise data extraction | `Snaffler.exe -s`, `findstr /SIM /C:"password" *.*` |
+| Automated Enum | WinPEAS, PowerUp, Seatbelt | `.\\winPEASx64.exe`, `Invoke-AllChecks`, `Seatbelt.exe` |
+
+```bash
+# Quick PE enumeration
+whoami /all & systeminfo & net localgroup & cmdkey /list & netstat -ano | findstr LISTENING
+
+# Potato check (SeImpersonate)
+whoami /priv | findstr SeImpersonate && echo "Try: PrintSpoofer / GodPotato / JuicyPotato"
+
+# Group-based escalation check
+whoami /groups | findstr /i "DnsAdmins Server.Operators Backup.Operators"
+```
+
+---
 
 ## Bruteforce (`capo brute`)
 

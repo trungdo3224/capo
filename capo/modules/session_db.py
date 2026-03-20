@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS commands (
     duration    REAL    NOT NULL DEFAULT 0.0,
     is_key      INTEGER NOT NULL DEFAULT 0,
     source      TEXT    NOT NULL DEFAULT 'auto'
-                CHECK(source IN ('auto','manual')),
+                CHECK(source IN ('auto','manual','shell')),
     created_at  TEXT    NOT NULL
 );
 
@@ -91,6 +91,40 @@ class SessionDB:
         conn = self._get_conn()
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
+        self._migrate_source_check(conn)
+
+    def _migrate_source_check(self, conn: sqlite3.Connection):
+        """Add 'shell' to the commands.source CHECK constraint if missing."""
+        try:
+            conn.execute(
+                "INSERT INTO commands (session_id, tool, command, source, created_at) "
+                "VALUES (-99, '_migrate', '', 'shell', '')"
+            )
+            conn.execute("DELETE FROM commands WHERE session_id = -99")
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            conn.executescript("""
+                CREATE TABLE _commands_mig (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    tool        TEXT    NOT NULL DEFAULT '',
+                    command     TEXT    NOT NULL,
+                    output_file TEXT    NOT NULL DEFAULT '',
+                    exit_code   INTEGER,
+                    duration    REAL    NOT NULL DEFAULT 0.0,
+                    is_key      INTEGER NOT NULL DEFAULT 0,
+                    source      TEXT    NOT NULL DEFAULT 'auto'
+                                CHECK(source IN ('auto','manual','shell')),
+                    created_at  TEXT    NOT NULL
+                );
+                INSERT INTO _commands_mig SELECT * FROM commands;
+                DROP TABLE commands;
+                ALTER TABLE _commands_mig RENAME TO commands;
+                CREATE INDEX IF NOT EXISTS idx_commands_session ON commands(session_id);
+                CREATE INDEX IF NOT EXISTS idx_commands_key ON commands(session_id, is_key)
+                    WHERE is_key = 1;
+            """)
 
     def _auto_load(self):
         """Restore active session from the marker file."""

