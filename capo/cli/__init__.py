@@ -46,6 +46,8 @@ from capo.cli.triggers_cmds import triggers_app
 from capo.cli.methodology_cmds import methodology_app
 from capo.cli.studio_cmds import app as studio_app
 from capo.cli.kerberos_cmds import kerberos_app
+from capo.cli.writeup_cmds import writeup_app
+from capo.cli.session_cmds import session_app
 
 app.add_typer(target_app, name="target")
 app.add_typer(scan_app, name="scan")
@@ -59,6 +61,8 @@ app.add_typer(report_app, name="report")
 app.add_typer(triggers_app, name="triggers")
 app.add_typer(methodology_app, name="methodology")
 app.add_typer(studio_app, name="studio")
+app.add_typer(writeup_app, name="writeup")
+app.add_typer(session_app, name="session")
 
 
 # ─────────────── Register Standalone Commands ───────────────

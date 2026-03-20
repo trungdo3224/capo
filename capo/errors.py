@@ -27,3 +27,7 @@ class StateError(CapoError):
 
 class ScanError(CapoError):
     """Raised when a scan execution fails (timeout, bad exit code, etc.)."""
+
+
+class SessionError(CapoError):
+    """Raised on session-related failures (not found, duplicate name, etc.)."""

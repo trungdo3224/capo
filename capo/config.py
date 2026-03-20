@@ -21,6 +21,13 @@ CUSTOM_TRIGGERS_FILE = CAPO_HOME / "custom_triggers.yaml"
 CORE_METHODOLOGIES_DIR = Path(__file__).parent / "core_methodologies"
 CUSTOM_METHODOLOGIES_DIR = CAPO_HOME / "custom_methodologies"
 
+# Writeup sync
+WRITEUP_RULES_DIR = CAPO_HOME / "writeup_rules"
+
+# Sessions
+SESSIONS_DB_FILE = CAPO_HOME / "sessions.db"
+CURRENT_SESSION_FILE = CAPO_HOME / ".current_session"
+
 # Default wordlist paths (common locations)
 WORDLISTS = {
     "dir_small": "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",

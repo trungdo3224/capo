@@ -68,6 +68,20 @@ export const fetchSuggestions    = ()           => _get('/api/suggestions')
 export const fetchCustomTriggers = ()           => _get('/api/triggers/custom')
 export const saveCustomTriggers  = (data)       => _post('/api/triggers/custom', data)
 
+// ── Sessions ────────────────────────────────────────────────────────────────
+export const fetchSessions         = ()               => _get('/api/sessions')
+export const createSession         = (data)           => _postJson('/api/sessions', data)
+export const getActiveSession      = ()               => _get('/api/sessions/active')
+export const activateSession       = (name)           => _postJson(`/api/sessions/${encodeURIComponent(name)}/activate`, {})
+export const getSession            = (name)           => _get(`/api/sessions/${encodeURIComponent(name)}`)
+export const deleteSession         = (name)           => _delete(`/api/sessions/${encodeURIComponent(name)}`)
+export const fetchSessionCommands  = (name, params)   => _get(`/api/sessions/${encodeURIComponent(name)}/commands${params ? '?' + params : ''}`)
+export const logManualCommand      = (name, data)     => _postJson(`/api/sessions/${encodeURIComponent(name)}/commands`, data)
+export const toggleCommandKey      = (id, isKey)      => _put(`/api/sessions/commands/${id}/key`, { is_key: isKey })
+export const fetchSessionFindings  = (name)           => _get(`/api/sessions/${encodeURIComponent(name)}/findings`)
+export const createFinding         = (name, data)     => _postJson(`/api/sessions/${encodeURIComponent(name)}/findings`, data)
+export const deleteFinding         = (id)             => _delete(`/api/sessions/findings/${id}`)
+
 // ── Knowledge Graph ─────────────────────────────────────────────────────────
 export const fetchGraph         = ()              => _get('/api/graph')
 export const createGraphNode    = (data)          => _postJson('/api/graph/nodes', data)

@@ -171,6 +171,16 @@ class BaseWrapper(ABC):
                 duration=round(elapsed, 1),
             )
 
+            # Record in session database (no-op if no active session)
+            from capo.modules.session_db import session_db
+            session_db.record_command(
+                tool=self.tool_name,
+                command=cmd_str,
+                output_file=str(output_file) if output_file else "",
+                exit_code=result.returncode,
+                duration=round(elapsed, 1),
+            )
+
             if result.returncode == 0:
                 print_success(f"{self.tool_name} completed in {elapsed:.1f}s")
             else:

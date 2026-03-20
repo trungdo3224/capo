@@ -9,6 +9,7 @@ export default defineComponent({
       { view: 'methodologies',icon: 'fa-code-branch',      label: 'Methodologies' },
       { view: 'engagement',   icon: 'fa-crosshairs',       label: 'Active Engagement' },
       { view: 'graph',        icon: 'fa-diagram-project',  label: 'Knowledge Graph' },
+      { view: 'sessions',     icon: 'fa-folder-open',       label: 'Sessions' },
       { view: 'suggestions',  icon: 'fa-lightbulb',        label: 'Suggestions' },
     ]
 

