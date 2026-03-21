@@ -5,6 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
+from capo.errors import TargetError
+
 
 @pytest.fixture
 def capo_home(tmp_path):
@@ -48,19 +50,19 @@ class TestSetTarget:
     def test_invalid_target_raises(self, fresh_manager, capo_home):
         with patch("capo.config.CAPO_HOME", capo_home), \
              patch("capo.config.WORKSPACES_DIR", capo_home / "workspaces"):
-            with pytest.raises(ValueError, match="Invalid target format"):
+            with pytest.raises(TargetError, match="Invalid target format"):
                 fresh_manager.set_target("not a valid target!!")
 
     def test_invalid_spaces_rejected(self, fresh_manager, capo_home):
         with patch("capo.config.CAPO_HOME", capo_home), \
              patch("capo.config.WORKSPACES_DIR", capo_home / "workspaces"):
-            with pytest.raises(ValueError):
+            with pytest.raises(TargetError):
                 fresh_manager.set_target("10.10.10 .100")
 
     def test_empty_string_rejected(self, fresh_manager, capo_home):
         with patch("capo.config.CAPO_HOME", capo_home), \
              patch("capo.config.WORKSPACES_DIR", capo_home / "workspaces"):
-            with pytest.raises(ValueError):
+            with pytest.raises(TargetError):
                 fresh_manager.set_target("")
 
 

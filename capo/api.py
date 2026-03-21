@@ -4,7 +4,7 @@ import re
 import yaml
 from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from capo import config
 from capo.campaign import CampaignManager
 from capo.config import CORS_ALLOWED_ORIGINS
+from capo.errors import GraphError, SessionError
 from capo.state import StateManager
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -56,28 +57,28 @@ class ConfigModel(BaseModel):
     config_file: str
 
 class StateModel(BaseModel):
-    current_target: Optional[str]
-    workspace_dir: Optional[str]
-    active_campaign: Optional[str]
+    current_target: str | None
+    workspace_dir: str | None
+    active_campaign: str | None
 
 class EngagementStatus(BaseModel):
-    target: Optional[str]
-    campaign: Optional[str]
-    state: Optional[dict[str, Any]]
+    target: str | None
+    campaign: str | None
+    state: dict[str, Any] | None
 
 class GraphNodeCreate(BaseModel):
     type: str
     label: str
     properties: dict[str, Any] = {}
-    x: Optional[float] = None
-    y: Optional[float] = None
+    x: float | None = None
+    y: float | None = None
 
 class GraphNodeUpdate(BaseModel):
-    label: Optional[str] = None
-    type: Optional[str] = None
-    properties: Optional[dict[str, Any]] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
+    label: str | None = None
+    type: str | None = None
+    properties: dict[str, Any] | None = None
+    x: float | None = None
+    y: float | None = None
 
 class GraphEdgeCreate(BaseModel):
     source: str
@@ -87,9 +88,9 @@ class GraphEdgeCreate(BaseModel):
     directed: bool = True
 
 class GraphEdgeUpdate(BaseModel):
-    label: Optional[str] = None
-    relationship: Optional[str] = None
-    directed: Optional[bool] = None
+    label: str | None = None
+    relationship: str | None = None
+    directed: bool | None = None
 
 class PositionUpdate(BaseModel):
     id: str
@@ -112,7 +113,7 @@ class CommandKeyToggle(BaseModel):
 class FindingCreate(BaseModel):
     title: str
     description: str = ""
-    command_id: Optional[int] = None
+    command_id: int | None = None
     category: str = "general"
     severity: str = "info"
 
@@ -453,7 +454,7 @@ def update_graph_node(node_id: str, body: GraphNodeUpdate):
     gm, _ = _get_graph_manager()
     try:
         return gm.update_node(node_id, **body.model_dump(exclude_none=True))
-    except KeyError as exc:
+    except GraphError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
@@ -463,10 +464,8 @@ def delete_graph_node(node_id: str):
     gm, _ = _get_graph_manager()
     try:
         gm.delete_node(node_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    except GraphError as exc:
+        raise HTTPException(status_code=400 if "state-synced" in str(exc) else 404, detail=str(exc))
     return Response(status_code=204)
 
 
@@ -480,8 +479,8 @@ def create_graph_edge(body: GraphEdgeCreate):
             label=body.label, relationship=body.relationship,
             directed=body.directed,
         )
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+    except GraphError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @app.put("/api/graph/edges/{edge_id}")
@@ -490,7 +489,7 @@ def update_graph_edge(edge_id: str, body: GraphEdgeUpdate):
     gm, _ = _get_graph_manager()
     try:
         return gm.update_edge(edge_id, **body.model_dump(exclude_none=True))
-    except KeyError as exc:
+    except GraphError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
@@ -500,7 +499,7 @@ def delete_graph_edge(edge_id: str):
     gm, _ = _get_graph_manager()
     try:
         gm.delete_edge(edge_id)
-    except KeyError as exc:
+    except GraphError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return Response(status_code=204)
 
@@ -564,7 +563,7 @@ def create_session(body: SessionCreate):
     db = _get_session_db()
     try:
         session = db.create_session(body.name, body.target_ip, body.domain, body.campaign)
-    except ValueError as e:
+    except SessionError as e:
         raise HTTPException(status_code=400, detail=str(e))
     db.activate_session(body.name)
     # Also set target + campaign via managers
@@ -594,7 +593,7 @@ def activate_session(name: str):
     db = _get_session_db()
     try:
         session = db.activate_session(name)
-    except ValueError as e:
+    except SessionError as e:
         raise HTTPException(status_code=404, detail=str(e))
     sm = StateManager()
     sm.set_target(session["target_ip"])
@@ -622,7 +621,7 @@ def delete_session(name: str):
     db = _get_session_db()
     try:
         db.delete_session(name)
-    except ValueError as e:
+    except SessionError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return Response(status_code=204)
 
@@ -631,7 +630,7 @@ def delete_session(name: str):
 def list_session_commands(
     name: str,
     key_only: bool = False,
-    tool: Optional[str] = None,
+    tool: str | None = None,
 ):
     """List commands for a session."""
     db = _get_session_db()

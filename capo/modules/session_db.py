@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from capo import config
+from capo.errors import SessionError
 
 _SCHEMA_SQL = """\
 CREATE TABLE IF NOT EXISTS sessions (
@@ -160,14 +161,14 @@ class SessionDB:
             )
             conn.commit()
         except sqlite3.IntegrityError:
-            raise ValueError(f"Session '{name}' already exists")
+            raise SessionError(f"Session '{name}' already exists")
         return self.get_session(name)  # type: ignore[return-value]
 
     def activate_session(self, name: str) -> dict:
         """Activate a session by name. Returns the session dict."""
         session = self.get_session(name)
         if not session:
-            raise ValueError(f"Session '{name}' not found")
+            raise SessionError(f"Session '{name}' not found")
         self._active_session_id = session["id"]
         self._active_session_name = session["name"]
         marker = self._session_file()
@@ -214,7 +215,7 @@ class SessionDB:
         conn = self._get_conn()
         session = self.get_session(name)
         if not session:
-            raise ValueError(f"Session '{name}' not found")
+            raise SessionError(f"Session '{name}' not found")
         conn.execute("DELETE FROM sessions WHERE name = ?", (name,))
         conn.commit()
         # If we just deleted the active session, clear it

@@ -12,6 +12,7 @@ from typing import Any
 from filelock import FileLock
 
 from capo import config
+from capo.errors import StateError
 
 CURRENT_SCHEMA_VERSION = 2
 
@@ -43,7 +44,7 @@ class CampaignManager:
 
     def _state_file(self) -> Path:
         if not self._dir:
-            raise RuntimeError("Campaign not set")
+            raise StateError("Campaign not set")
         return self._dir / "campaign.json"
 
     def _lock_file(self) -> FileLock:

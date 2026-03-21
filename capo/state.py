@@ -19,6 +19,7 @@ from filelock import FileLock
 
 from capo import config
 from capo import campaign
+from capo.errors import TargetError
 
 # Schema version for state.json — bump when adding/changing fields.
 # Migration logic in StateManager._migrate_state() handles upgrades.
@@ -76,7 +77,7 @@ class StateManager:
         Raises ValueError if target format is invalid.
         """
         if not _TARGET_RE.match(target):
-            raise ValueError(
+            raise TargetError(
                 f"Invalid target format: '{target}'. "
                 "Expected an IPv4 address (e.g. 10.10.10.100) or hostname."
             )

@@ -351,7 +351,7 @@ def _suggest_methodologies():
 
     methodology_engine.load_all()
     applicable = methodology_engine.get_applicable()
-    progress = state_manager.state.get("methodology_progress", {})
+    progress = state_manager.get("methodology_progress", {})
 
     suggestions = []
     for meth in applicable:

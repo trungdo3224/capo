@@ -3,6 +3,7 @@
 import typer
 
 from capo.cli.helpers import ensure_target
+from capo.errors import CapoError
 from capo.utils.display import print_error, print_warning
 
 brute_app = typer.Typer(help="Password bruteforce wrappers (Hydra)")
@@ -36,7 +37,7 @@ def brute_ssh(
             port=port,
             tasks=tasks,
         )
-    except ValueError as e:
+    except CapoError as e:
         print_error(str(e))
         raise typer.Exit(1)
 
@@ -73,7 +74,7 @@ def brute_http_post(
             https=https,
             tasks=tasks,
         )
-    except ValueError as e:
+    except CapoError as e:
         print_error(str(e))
         raise typer.Exit(1)
 
@@ -110,7 +111,7 @@ def brute_http_get(
             https=https,
             tasks=tasks,
         )
-    except ValueError as e:
+    except CapoError as e:
         print_error(str(e))
         raise typer.Exit(1)
 
@@ -147,6 +148,6 @@ def brute_web_form(
             port=port,
             tasks=tasks,
         )
-    except ValueError as e:
+    except CapoError as e:
         print_error(str(e))
         raise typer.Exit(1)

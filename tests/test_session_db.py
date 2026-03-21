@@ -2,6 +2,7 @@
 
 import pytest
 
+from capo.errors import SessionError
 from capo.modules.session_db import SessionDB
 
 
@@ -22,7 +23,7 @@ class TestSessionCRUD:
 
     def test_create_duplicate_raises(self, db):
         db.create_session("Forest", "10.10.10.161")
-        with pytest.raises(ValueError, match="already exists"):
+        with pytest.raises(SessionError, match="already exists"):
             db.create_session("Forest", "10.10.10.162")
 
     def test_activate_session(self, db):
@@ -33,7 +34,7 @@ class TestSessionCRUD:
         assert db.active_session_id is not None
 
     def test_activate_nonexistent_raises(self, db):
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(SessionError, match="not found"):
             db.activate_session("NoSuchSession")
 
     def test_deactivate_session(self, db):
@@ -77,7 +78,7 @@ class TestSessionCRUD:
         assert db.active_session_name is None
 
     def test_delete_nonexistent_raises(self, db):
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(SessionError, match="not found"):
             db.delete_session("Ghost")
 
 

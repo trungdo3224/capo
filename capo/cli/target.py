@@ -2,6 +2,7 @@
 
 import typer
 
+from capo.errors import TargetError
 from capo.state import state_manager
 from capo.campaign import campaign_manager
 from capo.utils.display import (
@@ -27,7 +28,7 @@ def target_set(
         
     try:
         workspace = state_manager.set_target(ip)
-    except ValueError as e:
+    except TargetError as e:
         print_error(str(e))
         raise typer.Exit(1)
         

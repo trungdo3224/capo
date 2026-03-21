@@ -4,6 +4,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from capo.errors import CapoError
 from capo.modules.wrappers.base import BaseWrapper
 from capo.state import state_manager
 from capo.utils.display import print_info
@@ -24,9 +25,9 @@ class BruteWrapper(BaseWrapper):
     ) -> list[str]:
         """Build hydra auth args from single creds or wordlists."""
         if not (username or userlist):
-            raise ValueError("Provide --user or --userlist")
+            raise CapoError("Provide --user or --userlist")
         if not (password or passlist):
-            raise ValueError("Provide --pass or --passlist")
+            raise CapoError("Provide --pass or --passlist")
 
         args: list[str] = []
         if username:

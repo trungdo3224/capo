@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from capo.errors import CapoError
+
 
 class TestBruteWrapper:
     @patch("capo.modules.wrappers.brute_wrapper.state_manager")
@@ -83,5 +85,5 @@ class TestBruteWrapper:
         mock_state.target = "10.10.10.10"
         brute = BruteWrapper()
 
-        with pytest.raises(ValueError):
+        with pytest.raises(CapoError):
             brute.ssh(target="10.10.10.10")

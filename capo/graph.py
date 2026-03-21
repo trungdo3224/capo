@@ -20,6 +20,8 @@ from typing import Any
 
 from filelock import FileLock
 
+from capo.errors import GraphError
+
 GRAPH_SCHEMA_VERSION = 1
 
 # Mapping of common credential service names → nmap service name variants.
@@ -590,7 +592,7 @@ class GraphManager:
         """
         node = self._node_by_id(node_id)
         if not node:
-            raise KeyError(f"Node {node_id!r} not found")
+            raise GraphError(f"Node {node_id!r} not found")
 
         is_state = node.get("source") == "state"
         allowed = {"label", "x", "y"} if is_state else {"label", "type", "properties", "x", "y"}
@@ -609,9 +611,9 @@ class GraphManager:
         """
         node = self._node_by_id(node_id)
         if not node:
-            raise KeyError(f"Node {node_id!r} not found")
+            raise GraphError(f"Node {node_id!r} not found")
         if node.get("source") == "state":
-            raise ValueError("Cannot delete state-synced nodes")
+            raise GraphError("Cannot delete state-synced nodes")
 
         self._data["nodes"] = [n for n in self._data["nodes"] if n["id"] != node_id]
         self._data["edges"] = [
@@ -628,13 +630,13 @@ class GraphManager:
                  relationship: str = "related_to", directed: bool = True) -> dict:
         """Create an edge between any two nodes. Returns the created edge."""
         if source_id == target_id:
-            raise ValueError("Self-edges are not allowed")
+            raise GraphError("Self-edges are not allowed")
         if not self._node_by_id(source_id):
-            raise KeyError(f"Source node {source_id!r} not found")
+            raise GraphError(f"Source node {source_id!r} not found")
         if not self._node_by_id(target_id):
-            raise KeyError(f"Target node {target_id!r} not found")
+            raise GraphError(f"Target node {target_id!r} not found")
         if self._find_edge(source_id, target_id, relationship):
-            raise ValueError(f"Edge with relationship {relationship!r} already exists between these nodes")
+            raise GraphError(f"Edge with relationship {relationship!r} already exists between these nodes")
 
         edge = self._make_edge(
             source_id=source_id, target_id=target_id,
@@ -649,7 +651,7 @@ class GraphManager:
         """Update an edge's label or relationship."""
         edge = self._edge_by_id(edge_id)
         if not edge:
-            raise KeyError(f"Edge {edge_id!r} not found")
+            raise GraphError(f"Edge {edge_id!r} not found")
         for k in ("label", "relationship", "directed"):
             if k in updates and updates[k] is not None:
                 edge[k] = updates[k]
@@ -661,7 +663,7 @@ class GraphManager:
         before = len(self._data["edges"])
         self._data["edges"] = [e for e in self._data["edges"] if e["id"] != edge_id]
         if len(self._data["edges"]) == before:
-            raise KeyError(f"Edge {edge_id!r} not found")
+            raise GraphError(f"Edge {edge_id!r} not found")
         self._save()
 
     # ------------------------------------------------------------------

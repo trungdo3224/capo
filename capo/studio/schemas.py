@@ -1,36 +1,38 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any, Union
+from typing import Any
+
+from pydantic import BaseModel
+
 
 class CommandModel(BaseModel):
     name: str
     description: str
     command: str
-    tool: Optional[str] = None
-    tags: Optional[List[str]] = []
-    os: Optional[str] = None
-    exam: Optional[List[str]] = []
-    notes: Optional[str] = None
+    tool: str | None = None
+    tags: list[str] | None = []
+    os: str | None = None
+    exam: list[str] | None = []
+    notes: str | None = None
 
 class CheatsheetModel(BaseModel):
     category: str
     description: str
-    commands: List[CommandModel]
+    commands: list[CommandModel]
 
 class ApplicableWhenModel(BaseModel):
-    ports: Optional[List[int]] = []
-    services: Optional[List[str]] = []
+    ports: list[int] | None = []
+    services: list[str] | None = []
 
 class StepModel(BaseModel):
     id: str
     name: str
     phase: str
     description: str
-    commands: Optional[List[str]] = []
-    check: Optional[Dict[str, Any]] = None
+    commands: list[str] | None = []
+    check: dict[str, Any] | None = None
 
 class MethodologyModel(BaseModel):
     name: str
     display_name: str
     description: str
-    applicable_when: Optional[ApplicableWhenModel] = None
-    steps: List[StepModel]
+    applicable_when: ApplicableWhenModel | None = None
+    steps: list[StepModel]

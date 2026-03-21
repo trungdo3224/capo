@@ -8,6 +8,7 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
+from capo.errors import SessionError
 from capo.modules.session_db import session_db
 from capo.utils.display import console, print_error, print_success, print_warning
 
@@ -39,7 +40,7 @@ def session_new(
     """Create a new session and activate it."""
     try:
         session = session_db.create_session(name, target_ip, domain, campaign)
-    except ValueError as e:
+    except SessionError as e:
         print_error(str(e))
         raise typer.Exit(1)
 
@@ -66,7 +67,7 @@ def session_use(
     """Switch to an existing session."""
     try:
         session = session_db.activate_session(name)
-    except ValueError as e:
+    except SessionError as e:
         print_error(str(e))
         raise typer.Exit(1)
 

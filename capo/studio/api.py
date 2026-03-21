@@ -1,11 +1,13 @@
+from pathlib import Path
+from typing import Any
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from typing import List, Dict, Any
-from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 from capo.config import CORS_ALLOWED_ORIGINS
+from capo.errors import ConfigError
 from capo.studio.schemas import CheatsheetModel, MethodologyModel
 from capo.studio.yaml_manager import YamlManager
 
@@ -28,18 +30,18 @@ yaml_mgr = YamlManager(str(CHEATSHEET_DIR), str(METHODOLOGY_DIR))
 
 # API Routes
 @app.get("/api/cheatsheets")
-def list_cheatsheets() -> List[str]:
+def list_cheatsheets() -> list[str]:
     return yaml_mgr.list_cheatsheets()
 
 @app.get("/api/cheatsheets/{filename}")
-def get_cheatsheet(filename: str) -> Dict[str, Any]:
+def get_cheatsheet(filename: str) -> dict[str, Any]:
     try:
         return yaml_mgr.get_cheatsheet(filename)
-    except FileNotFoundError:
+    except ConfigError:
         raise HTTPException(status_code=404, detail="Cheatsheet not found")
 
 @app.post("/api/cheatsheets/{filename}")
-def save_cheatsheet(filename: str, data: Dict[str, Any]):
+def save_cheatsheet(filename: str, data: dict[str, Any]):
     try:
         CheatsheetModel(**data)
     except Exception as e:
@@ -49,18 +51,18 @@ def save_cheatsheet(filename: str, data: Dict[str, Any]):
 
 
 @app.get("/api/methodologies")
-def list_methodologies() -> List[str]:
+def list_methodologies() -> list[str]:
     return yaml_mgr.list_methodologies()
 
 @app.get("/api/methodologies/{filename}")
-def get_methodology(filename: str) -> Dict[str, Any]:
+def get_methodology(filename: str) -> dict[str, Any]:
     try:
         return yaml_mgr.get_methodology(filename)
-    except FileNotFoundError:
+    except ConfigError:
         raise HTTPException(status_code=404, detail="Methodology not found")
 
 @app.post("/api/methodologies/{filename}")
-def save_methodology(filename: str, data: Dict[str, Any]):
+def save_methodology(filename: str, data: dict[str, Any]):
     try:
         MethodologyModel(**data)
     except Exception as e:

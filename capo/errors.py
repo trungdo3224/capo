@@ -31,3 +31,11 @@ class ScanError(CapoError):
 
 class SessionError(CapoError):
     """Raised on session-related failures (not found, duplicate name, etc.)."""
+
+
+class GraphError(CapoError):
+    """Raised on graph node/edge operation failures (not found, invalid, etc.)."""
+
+
+class ConfigError(CapoError):
+    """Raised on configuration or YAML file errors (invalid filename, not found, etc.)."""

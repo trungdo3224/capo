@@ -39,27 +39,26 @@ class MethodologyStep:
         """Check if state satisfies this step's auto-complete conditions."""
         if not self.check:
             return False
-        state = state_manager.state
         if "users_min" in self.check:
-            if len(state.get("users", [])) < self.check["users_min"]:
+            if len(state_manager.get("users", [])) < self.check["users_min"]:
                 return False
         if "hashes_min" in self.check:
-            if len(state.get("hashes", [])) < self.check["hashes_min"]:
+            if len(state_manager.get("hashes", [])) < self.check["hashes_min"]:
                 return False
         if "credentials_min" in self.check:
-            if len(state.get("credentials", [])) < self.check["credentials_min"]:
+            if len(state_manager.get("credentials", [])) < self.check["credentials_min"]:
                 return False
         if "ports_min" in self.check:
-            if len(state.get("ports", [])) < self.check["ports_min"]:
+            if len(state_manager.get("ports", [])) < self.check["ports_min"]:
                 return False
         if "directories_min" in self.check:
-            if len(state.get("directories", [])) < self.check["directories_min"]:
+            if len(state_manager.get("directories", [])) < self.check["directories_min"]:
                 return False
         if "shares_min" in self.check:
-            if len(state.get("shares", [])) < self.check["shares_min"]:
+            if len(state_manager.get("shares", [])) < self.check["shares_min"]:
                 return False
         if "flags" in self.check:
-            flags = state.get("flags", {})
+            flags = state_manager.get("flags", {})
             if not flags.get("local_txt") and not flags.get("proof_txt"):
                 return False
         return True
@@ -177,7 +176,7 @@ class MethodologyEngine:
     def auto_check_all_active(self) -> dict[str, list[str]]:
         """Auto-check all methodologies that have been started."""
         results = {}
-        progress = state_manager.state.get("methodology_progress", {})
+        progress = state_manager.get("methodology_progress", {})
         for name in progress:
             newly = self.auto_check(name)
             if newly:
