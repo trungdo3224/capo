@@ -17,7 +17,7 @@ class NetExecWrapper(BaseWrapper):
 
     def smb_null_session(self, target: str | None = None):
         """Enumerate SMB with null session."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_null")
         cmd = [
             "nxc", "smb", target,
@@ -28,7 +28,7 @@ class NetExecWrapper(BaseWrapper):
 
     def smb_guest_session(self, target: str | None = None):
         """Enumerate SMB with guest session."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_guest")
         cmd = [
             "nxc", "smb", target,
@@ -40,7 +40,7 @@ class NetExecWrapper(BaseWrapper):
     def smb_enum_shares(self, username: str = "", password: str = "",
                         target: str | None = None):
         """Enumerate SMB shares with credentials."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_shares")
         cmd = [
             "nxc", "smb", target,
@@ -53,7 +53,7 @@ class NetExecWrapper(BaseWrapper):
     def smb_enum_users(self, username: str = "", password: str = "",
                        target: str | None = None):
         """Enumerate domain users via SMB/RID brute."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_users")
         cmd = [
             "nxc", "smb", target,
@@ -65,7 +65,7 @@ class NetExecWrapper(BaseWrapper):
 
     def smb_rid_brute(self, target: str | None = None):
         """RID brute force enumeration."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_rid")
         cmd = [
             "nxc", "smb", target,
@@ -77,7 +77,7 @@ class NetExecWrapper(BaseWrapper):
     def smb_pass_pol(self, username: str = "", password: str = "",
                      target: str | None = None):
         """Get password policy."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("smb_passpol")
         cmd = [
             "nxc", "smb", target,
@@ -90,7 +90,7 @@ class NetExecWrapper(BaseWrapper):
     def ldap_enum(self, username: str = "", password: str = "",
                   target: str | None = None):
         """LDAP enumeration."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("ldap_enum")
         cmd = [
             "nxc", "ldap", target,
@@ -103,7 +103,7 @@ class NetExecWrapper(BaseWrapper):
     def winrm_check(self, username: str, password: str,
                     target: str | None = None):
         """Check WinRM access with credentials."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("winrm_check")
         cmd = [
             "nxc", "winrm", target,
@@ -115,7 +115,7 @@ class NetExecWrapper(BaseWrapper):
     def spray_password(self, userfile: str, password: str,
                        target: str | None = None):
         """Password spray against SMB (careful with lockout!)."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("spray")
         cmd = [
             "nxc", "smb", target,

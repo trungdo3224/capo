@@ -15,7 +15,7 @@ class NmapWrapper(BaseWrapper):
 
     def quick_scan(self, target: str | None = None):
         """Fast all-ports TCP scan (-p- --min-rate)."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("quick")
         xml_out = out.with_suffix(".xml")
 
@@ -35,7 +35,7 @@ class NmapWrapper(BaseWrapper):
 
     def detailed_scan(self, ports: str | None = None, target: str | None = None):
         """Detailed scan with -sC -sV on discovered ports."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         if ports is None:
             open_ports = state_manager.get_open_ports()
             if not open_ports:
@@ -60,7 +60,7 @@ class NmapWrapper(BaseWrapper):
 
     def udp_scan(self, target: str | None = None):
         """UDP top ports scan."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("udp")
         xml_out = out.with_suffix(".xml")
         timing = self.profile_config["nmap_timing"]
@@ -79,7 +79,7 @@ class NmapWrapper(BaseWrapper):
 
     def vuln_scan(self, ports: str | None = None, target: str | None = None):
         """Run vuln NSE scripts (OSCP-safe)."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         if ports is None:
             open_ports = state_manager.get_open_ports()
             if not open_ports:
@@ -199,7 +199,7 @@ class NmapWrapper(BaseWrapper):
     def custom_scan(self, extra_args: str, target: str | None = None):
         """Run a custom nmap scan with user-supplied flags. XML output is still parsed into state."""
         import shlex as _shlex
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("custom")
         xml_out = out.with_suffix(".xml")
 
@@ -244,7 +244,7 @@ class NmapWrapper(BaseWrapper):
     def ports_scan(self, ports: str, target: str | None = None,
                    run_scripts: bool = True, detect_versions: bool = True):
         """Scan a specific port list with optional version/script detection."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("ports")
         xml_out = out.with_suffix(".xml")
         timing = self.profile_config["nmap_timing"]
@@ -268,7 +268,7 @@ class NmapWrapper(BaseWrapper):
 
     def os_scan(self, target: str | None = None):
         """OS detection scan (-O). Best run as root."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("os")
         xml_out = out.with_suffix(".xml")
         timing = self.profile_config["nmap_timing"]
@@ -285,7 +285,7 @@ class NmapWrapper(BaseWrapper):
 
     def scripts_scan(self, scripts: str, ports: str | None = None, target: str | None = None):
         """Run specific NSE scripts. Falls back to all open ports if none supplied."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         if ports is None:
             open_ports = state_manager.get_open_ports()
             if not open_ports:

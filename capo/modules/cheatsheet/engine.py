@@ -46,9 +46,9 @@ class CheatsheetEntry:
         # If both USER and PASS are requested, expand all known valid credentials
         if "USER" in variables and "PASS" in variables:
             if campaign_manager.active:
-                creds = [c for c in campaign_manager._state.get("credentials", []) if c.get("username") and c.get("password")]
+                creds = [c for c in campaign_manager.get("credentials", []) if c.get("username") and c.get("password")]
             else:
-                creds = [c for c in state_manager._state.get("credentials", []) if c.get("username") and c.get("password")]
+                creds = [c for c in state_manager.get("credentials", []) if c.get("username") and c.get("password")]
                 
             if creds:
                 expanded_cmds = []

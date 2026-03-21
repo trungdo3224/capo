@@ -345,7 +345,7 @@ class GraphManager:
             user = h.get("username", "") if isinstance(h, dict) else ""
             hash_type = h.get("type", "unknown") if isinstance(h, dict) else "unknown"
             hash_val = h.get("hash", str(h)) if isinstance(h, dict) else str(h)
-            key = f"hash:{user}:{hash_type}" if user else f"hash:{hash_val[:32]}"
+            key = f"hash:{user}:{hash_type}:{hash_val[:32]}" if user else f"hash:{hash_val[:32]}"
             wanted_keys.add(key)
             label = f"{user}:{hash_type}" if user else f"{hash_type}:{hash_val[:16]}..."
             props = {"username": user, "hash_type": hash_type, "hash": hash_val}

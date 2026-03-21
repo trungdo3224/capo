@@ -1,5 +1,6 @@
 """Session management CLI commands."""
 
+import re
 import sys
 from pathlib import Path
 
@@ -144,7 +145,9 @@ def session_show(
         f"Findings: [yellow]{summary['findings_count']}[/yellow]"
     )
     if summary.get("first_command_at"):
-        header += f"\nFirst: {summary['first_command_at'][:19]}  Last: {summary['last_command_at'][:19]}"
+        first = (summary["first_command_at"] or "")[:19]
+        last = (summary["last_command_at"] or "")[:19]
+        header += f"\nFirst: {first}  Last: {last}"
 
     console.print(Panel(header, title="Session", border_style="cyan"))
 
@@ -492,12 +495,16 @@ def session_hook():
 
     tools = _load_tools_list()
 
+    # Only allow safe tool names (alphanumeric, dash, underscore, dot)
+    _safe_tool_re = re.compile(r'^[a-zA-Z0-9._-]+$')
+    safe_tools = [t for t in tools if _safe_tool_re.match(t)]
+
     # Bash associative array declaration
-    bash_entries = " ".join(f'[{t}]=1' for t in tools)
+    bash_entries = " ".join(f'[{t}]=1' for t in safe_tools)
     tools_decl = f'declare -A _CAPO_TOOLS=({bash_entries})'
 
     # Zsh associative array (redeclare inside zsh block)
-    zsh_entries = " ".join(f'[{t}]=1' for t in tools)
+    zsh_entries = " ".join(f'[{t}]=1' for t in safe_tools)
     tools_decl_zsh = f'typeset -gA _CAPO_TOOLS=({zsh_entries})'
 
     script = (

@@ -21,7 +21,7 @@ class WebFuzzWrapper(BaseWrapper):
                  extensions: str = "", host_mode: str = "ip",
                  domain: str | None = None):
         """Directory fuzzing with ffuf."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         if host_mode == "domain":
             fuzz_host = domain or state_manager.get("domain", "")
             if not fuzz_host:
@@ -74,7 +74,7 @@ class WebFuzzWrapper(BaseWrapper):
                    https: bool = False, wordlist: str | None = None,
                    target: str | None = None):
         """Virtual host fuzzing."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         domain = domain or state_manager.get("domain", target)
         scheme = "https" if https else "http"
         url = f"{scheme}://{domain}:{port}/"
@@ -107,7 +107,7 @@ class WebFuzzWrapper(BaseWrapper):
                     target: str | None = None,
                     resolver: str | None = None):
         """Subdomain DNS enumeration with gobuster (preferred) or ffuf fallback."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         domain = domain or state_manager.get("domain", "")
         if not domain:
             print_warning("No domain set. Use --domain or: capo target set-domain <domain>")
@@ -211,7 +211,7 @@ class WebFuzzWrapper(BaseWrapper):
                        wordlist: str | None = None, depth: int = 2,
                        target: str | None = None):
         """Recursive directory fuzzing."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         scheme = "https" if https else "http"
         url = f"{scheme}://{target}:{port}/FUZZ"
 

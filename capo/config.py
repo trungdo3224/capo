@@ -28,6 +28,12 @@ WRITEUP_RULES_DIR = CAPO_HOME / "writeup_rules"
 SESSIONS_DB_FILE = CAPO_HOME / "sessions.db"
 CURRENT_SESSION_FILE = CAPO_HOME / ".current_session"
 
+# CORS — shared across all FastAPI apps (Studio + main API)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8000", "http://127.0.0.1:8000",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+]
+
 # Default wordlist paths (common locations)
 WORDLISTS = {
     "dir_small": "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",

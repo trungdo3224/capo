@@ -84,7 +84,7 @@ class Methodology:
             return True
         ports = set(state_manager.get_open_ports())
         required_ports = set(self.applicable_when.get("ports", []))
-        if required_ports and len(required_ports.intersection(ports)) < 2:
+        if required_ports and not required_ports.intersection(ports):
             return False
         required_services = self.applicable_when.get("services", [])
         if required_services:

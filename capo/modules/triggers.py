@@ -251,13 +251,8 @@ PORT_TRIGGERS: dict[int, list[dict]] = {
 
 def _inject_vars(text: str) -> str:
     """Replace {VAR} placeholders with state values."""
-    import re
-    variables = re.findall(r"\{(\w+)\}", text)
-    for var in variables:
-        value = state_manager.get_var(var)
-        if value:
-            text = text.replace(f"{{{var}}}", value)
-    return text
+    from capo.utils.inject import inject_vars
+    return inject_vars(text)
 
 
 def check_triggers():
@@ -316,7 +311,7 @@ def _check_web_findings():
         path = d.get("path", "").lower()
         if "wp-" in path:
             print_suggestion("WordPress detected!", [
-                "wpscan --url http://{IP} -e ap,at,u",
+                _inject_vars("wpscan --url http://{IP} -e ap,at,u"),
                 "capo query wordpress",
             ])
             return

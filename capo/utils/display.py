@@ -170,12 +170,26 @@ def print_credentials_table(creds: list[dict]):
 
 def print_directory_tree(workspace_path):
     """Print workspace directory tree."""
+    from pathlib import Path
+
+    workspace_path = Path(workspace_path)
+    if not workspace_path.is_dir():
+        print_warning(f"Directory not found: {workspace_path}")
+        return
+
     tree = Tree(f"📁 {workspace_path.name}", style="bold cyan")
-    for item in sorted(workspace_path.iterdir()):
-        if item.is_dir():
-            branch = tree.add(f"📁 {item.name}")
-            for sub in sorted(item.iterdir()):
-                branch.add(f"📄 {sub.name}")
-        else:
-            tree.add(f"📄 {item.name}")
+    try:
+        for item in sorted(workspace_path.iterdir()):
+            if item.is_dir():
+                branch = tree.add(f"📁 {item.name}")
+                try:
+                    for sub in sorted(item.iterdir()):
+                        branch.add(f"📄 {sub.name}")
+                except PermissionError:
+                    branch.add("[dim red]⛔ access denied[/dim red]")
+            else:
+                tree.add(f"📄 {item.name}")
+    except PermissionError:
+        print_warning(f"Permission denied: {workspace_path}")
+        return
     console.print(tree)

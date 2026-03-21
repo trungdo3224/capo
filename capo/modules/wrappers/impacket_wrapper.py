@@ -86,7 +86,7 @@ class ImpacketWrapper(BaseWrapper):
         Requires a domain and either a user list or a single username.
         No credentials needed (unauthenticated).
         """
-        target  = target or state_manager.target
+        target  = self._resolve_target(target)
         domain  = domain or state_manager.get("domain", "")
         binary  = _find_impacket("GetNPUsers")
         out     = self._output_base("asrep")
@@ -122,7 +122,7 @@ class ImpacketWrapper(BaseWrapper):
     def kerberoast(self, target: str | None = None, domain: str = "",
                    username: str = "", password: str = "", hashes: str = ""):
         """Kerberoast — request TGS tickets for accounts with SPNs."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         domain = domain or state_manager.get("domain", "")
         binary = _find_impacket("GetUserSPNs")
         out    = self._output_base("kerberoast")
@@ -143,7 +143,7 @@ class ImpacketWrapper(BaseWrapper):
     def secretsdump(self, target: str | None = None, username: str = "",
                     password: str = "", hashes: str = "", domain: str = ""):
         """Dump SAM/LSA/NTDS hashes remotely via secretsdump."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         binary = _find_impacket("secretsdump")
         out    = self._output_base("secretsdump")
 
@@ -162,7 +162,7 @@ class ImpacketWrapper(BaseWrapper):
         Targets the domain controller. Use dump_user='Administrator' to dump
         a single account, or leave blank for all accounts.
         """
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         domain = domain or state_manager.get("domain", "")
         binary = _find_impacket("secretsdump")
         out    = self._output_base("dcsync")
@@ -188,7 +188,7 @@ class ImpacketWrapper(BaseWrapper):
 
         Replaces the current process via os.execvp so the user gets a real TTY.
         """
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         binary = _find_impacket(tool)
 
         if not shutil.which(binary):

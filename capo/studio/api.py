@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from typing import List, Dict, Any
 from pathlib import Path
 
+from capo.config import CORS_ALLOWED_ORIGINS
 from capo.studio.schemas import CheatsheetModel, MethodologyModel
 from capo.studio.yaml_manager import YamlManager
 
@@ -18,8 +19,7 @@ app = FastAPI(title="Capo Studio API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

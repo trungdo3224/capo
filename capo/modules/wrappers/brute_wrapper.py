@@ -52,7 +52,7 @@ class BruteWrapper(BaseWrapper):
         tasks: int = 4,
     ):
         """SSH brute force / password spray with Hydra."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("ssh")
 
         cmd = ["hydra", "-I", "-f", "-t", str(tasks)]
@@ -126,7 +126,7 @@ class BruteWrapper(BaseWrapper):
         tasks: int = 4,
     ):
         """Generic Hydra web form bruteforce for any supported module."""
-        target = target or state_manager.target
+        target = self._resolve_target(target)
         out = self._output_file("webform")
 
         cmd = ["hydra", "-I", "-f", "-t", str(tasks)]

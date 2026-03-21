@@ -521,6 +521,7 @@ class StateManager:
 
     def add_vhost(self, vhost: str):
         """Add a discovered virtual host."""
+        self._state.setdefault("vhosts", [])
         if vhost and vhost not in self._state["vhosts"]:
             self._state["vhosts"].append(vhost)
             self._save_state()

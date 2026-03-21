@@ -86,6 +86,14 @@ class BaseWrapper(ABC):
             raise TargetError("No target set. Use: capo target set <IP>")
         return True
 
+    @staticmethod
+    def _resolve_target(target: str | None) -> str:
+        """Return *target* if given, otherwise fall back to state."""
+        resolved = target or state_manager.target
+        if not resolved:
+            raise TargetError("No target set. Use: capo target set <IP>")
+        return resolved
+
     def _output_dir(self) -> Path:
         """Get the scan output directory for the current target."""
         if state_manager.workspace is None:

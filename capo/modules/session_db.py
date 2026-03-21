@@ -95,36 +95,34 @@ class SessionDB:
 
     def _migrate_source_check(self, conn: sqlite3.Connection):
         """Add 'shell' to the commands.source CHECK constraint if missing."""
-        try:
-            conn.execute(
-                "INSERT INTO commands (session_id, tool, command, source, created_at) "
-                "VALUES (-99, '_migrate', '', 'shell', '')"
-            )
-            conn.execute("DELETE FROM commands WHERE session_id = -99")
-            conn.commit()
-        except sqlite3.IntegrityError:
-            conn.rollback()
-            conn.executescript("""
-                CREATE TABLE _commands_mig (
-                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-                    tool        TEXT    NOT NULL DEFAULT '',
-                    command     TEXT    NOT NULL,
-                    output_file TEXT    NOT NULL DEFAULT '',
-                    exit_code   INTEGER,
-                    duration    REAL    NOT NULL DEFAULT 0.0,
-                    is_key      INTEGER NOT NULL DEFAULT 0,
-                    source      TEXT    NOT NULL DEFAULT 'auto'
-                                CHECK(source IN ('auto','manual','shell')),
-                    created_at  TEXT    NOT NULL
-                );
-                INSERT INTO _commands_mig SELECT * FROM commands;
-                DROP TABLE commands;
-                ALTER TABLE _commands_mig RENAME TO commands;
-                CREATE INDEX IF NOT EXISTS idx_commands_session ON commands(session_id);
-                CREATE INDEX IF NOT EXISTS idx_commands_key ON commands(session_id, is_key)
-                    WHERE is_key = 1;
-            """)
+        # Probe the schema SQL to see if 'shell' is already in the CHECK constraint
+        row = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='commands'"
+        ).fetchone()
+        if row and "'shell'" in row[0]:
+            return  # Already has 'shell' in the CHECK constraint
+
+        conn.executescript("""
+            CREATE TABLE _commands_mig (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id  INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                tool        TEXT    NOT NULL DEFAULT '',
+                command     TEXT    NOT NULL,
+                output_file TEXT    NOT NULL DEFAULT '',
+                exit_code   INTEGER,
+                duration    REAL    NOT NULL DEFAULT 0.0,
+                is_key      INTEGER NOT NULL DEFAULT 0,
+                source      TEXT    NOT NULL DEFAULT 'auto'
+                            CHECK(source IN ('auto','manual','shell')),
+                created_at  TEXT    NOT NULL
+            );
+            INSERT INTO _commands_mig SELECT * FROM commands;
+            DROP TABLE commands;
+            ALTER TABLE _commands_mig RENAME TO commands;
+            CREATE INDEX IF NOT EXISTS idx_commands_session ON commands(session_id);
+            CREATE INDEX IF NOT EXISTS idx_commands_key ON commands(session_id, is_key)
+                WHERE is_key = 1;
+        """)
 
     def _auto_load(self):
         """Restore active session from the marker file."""
@@ -340,9 +338,12 @@ class SessionDB:
         if sid is None:
             return {}
         conn = self._get_conn()
-        session = dict(conn.execute(
+        row = conn.execute(
             "SELECT * FROM sessions WHERE id = ?", (sid,)
-        ).fetchone())
+        ).fetchone()
+        if row is None:
+            return {}
+        session = dict(row)
 
         stats = conn.execute(
             "SELECT COUNT(*) as total, "

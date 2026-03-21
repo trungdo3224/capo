@@ -2,7 +2,6 @@
 
 import typer
 
-from capo.errors import TargetError
 from capo.state import state_manager
 from capo.utils.display import (
     console,
@@ -15,13 +14,22 @@ from capo.utils.display import (
 def ensure_target(target: str | None):
     """Ensure we have a target set (from arg or current state).
 
-    Raises TargetError if no target is available.
+    When an explicit target is provided, it always takes effect — even if
+    a different target is already stored in state.  This prevents the
+    confusing case where ``capo scan quick 10.10.10.200`` silently runs
+    against a previously-set 10.10.10.100.
+
+    Prints a clean error and exits if no target is available.
     """
     if target:
-        if not state_manager.target:
+        try:
             state_manager.set_target(target)
+        except ValueError as e:
+            print_error(str(e))
+            raise typer.Exit(1)
     elif not state_manager.target:
-        raise TargetError("No target set. Use: capo target set <IP>")
+        print_error("No target set. Use: capo target set <IP>")
+        raise typer.Exit(1)
 
 
 def display_cheatsheet_results(results, copy: bool = False):

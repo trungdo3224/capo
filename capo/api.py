@@ -2,7 +2,7 @@
 
 import re
 import yaml
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from capo import config
 from capo.campaign import CampaignManager
+from capo.config import CORS_ALLOWED_ORIGINS
 from capo.state import StateManager
 
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -38,7 +39,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -160,11 +161,8 @@ def _save_yaml(custom_dir: Path, filename: str, data: dict) -> None:
 
 def _inject(text: str, sm: StateManager) -> str:
     """Replace {VAR} placeholders using a StateManager instance."""
-    for var in re.findall(r"\{(\w+)\}", text):
-        val = sm.get_var(var)
-        if val:
-            text = text.replace(f"{{{var}}}", val)
-    return text
+    from capo.utils.inject import inject_vars
+    return inject_vars(text, state_manager=sm)
 
 
 def _load_suggestion_rules():
@@ -231,7 +229,7 @@ def _build_suggestions(sm: StateManager) -> dict:
         path = d.get("path", "").lower()
         if "wp-" in path:
             contextual.append({"title": "WordPress detected!", "commands": [
-                "wpscan --url http://{IP} -e ap,at,u", "capo query wordpress"
+                _inject("wpscan --url http://{IP} -e ap,at,u", sm), "capo query wordpress"
             ]})
             break
         if "cgi-bin" in path:
@@ -532,6 +530,20 @@ def _get_session_db():
     return SessionDB()
 
 
+@contextmanager
+def _temporary_session(db, name: str):
+    """Activate *name* for the duration of the block, then restore the previous session."""
+    prev_name = db.active_session_name
+    db.activate_session(name)
+    try:
+        yield db
+    finally:
+        if prev_name and prev_name != name:
+            db.activate_session(prev_name)
+        elif not prev_name:
+            db.deactivate_session()
+
+
 @app.get("/api/sessions")
 def list_sessions():
     """List all sessions."""
@@ -633,16 +645,8 @@ def log_manual_command(name: str, body: ManualCommandLog):
     session = db.get_session(name)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
-    # Temporarily activate to record
-    prev_id = db.active_session_id
-    prev_name = db.active_session_name
-    db.activate_session(name)
-    cmd_id = db.record_command(tool=body.tool, command=body.command, source="manual")
-    # Restore previous active session
-    if prev_name:
-        db.activate_session(prev_name)
-    else:
-        db.deactivate_session()
+    with _temporary_session(db, name):
+        cmd_id = db.record_command(tool=body.tool, command=body.command, source="manual")
     return {"id": cmd_id}
 
 
@@ -671,20 +675,14 @@ def create_finding(name: str, body: FindingCreate):
     session = db.get_session(name)
     if not session:
         raise HTTPException(status_code=404, detail=f"Session '{name}' not found")
-    # Temporarily activate to add finding
-    prev_name = db.active_session_name
-    db.activate_session(name)
-    fid = db.add_finding(
-        title=body.title,
-        description=body.description,
-        command_id=body.command_id,
-        category=body.category,
-        severity=body.severity,
-    )
-    if prev_name and prev_name != name:
-        db.activate_session(prev_name)
-    elif not prev_name:
-        db.deactivate_session()
+    with _temporary_session(db, name):
+        fid = db.add_finding(
+            title=body.title,
+            description=body.description,
+            command_id=body.command_id,
+            category=body.category,
+            severity=body.severity,
+        )
     return {"id": fid}
 
 

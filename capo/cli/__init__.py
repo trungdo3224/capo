@@ -4,7 +4,6 @@ import typer
 
 from capo import __version__
 from capo.config import ensure_dirs
-from capo.errors import CapoError
 from capo.utils.display import banner, console, print_error
 
 # Initialize Typer app
