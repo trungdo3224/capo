@@ -185,7 +185,7 @@ trufflehog filesystem ./git-dump
 gitleaks detect -s ./git-dump --no-git
 ```
 
-> **Cheatsheet shortcut:** `capo query git-detect` / `capo query git-dump` / `capo query git-grep-secrets`
+> **Cheatsheet shortcut:** `capo search git-detect` / `capo search git-dump` / `capo search git-grep-secrets`
 
 ## NetExec / SMB (`capo nxc`)
 
@@ -234,7 +234,7 @@ capo kerberos dcsync -u admin -p pass --dump-user krbtgt
 
 ## Privilege Escalation
 
-Available as methodologies (`capo methodology start linux-privesc` / `windows-privesc`) and cheatsheet lookups (`capo query privesc-linux` / `capo query privesc-windows`).
+Available as methodologies (`capo methodology linux-privesc` / `windows-privesc`) and cheatsheet lookups (`capo search privesc-linux` / `capo search privesc-windows`).
 
 ### Linux PE Quick Reference
 
@@ -339,22 +339,22 @@ The "Brain" of the tool. Tracks everything found so far.
 
 ## Methodologies (`capo methodology`)
 
-Interactive checklists that auto-complete based on your findings.
+Interactive checklists that auto-complete based on your findings. Unknown subcommands are routed directly — `capo methodology <name>` starts/resumes a workflow.
 
 | Command | Description |
 | :--- | :--- |
 | `list` | Show available workflows (e.g., `ad_kill_chain`, `web_app`). |
-| `start` | Start a methodology for this target. |
 | `status` | Show current methodology progress. |
 | `next` | Show the next pending steps & commands. |
 | `done` | Mark a step as manually complete. |
 | `auto-check` | Check if any steps can be auto-completed based on new state data. |
 
 ```bash
-capo methodology start ad_kill_chain
-capo methodology next
-capo methodology done recon
-capo methodology auto-check
+capo methodology ad_kill_chain               # start/resume a methodology
+capo methodology ad_kill_chain recon         # show commands for a specific step
+capo methodology next ad_kill_chain          # next pending steps
+capo methodology done ad_kill_chain recon    # mark step complete
+capo methodology auto-check                  # auto-complete based on state
 ```
 
 ## Triggers (`capo triggers`)
@@ -392,10 +392,12 @@ capo writeup status
 
 ## Exam Mode (`capo mode`)
 
+Unknown subcommands are routed as mode names — `capo mode oscp` sets the mode directly.
+
 | Command | Description |
 | :--- | :--- |
-| `set oscp` | Strict OSCP mode — disables LLM, enforces Metasploit (1 machine limit). |
-| `set cpts` | CPTS mode — all features enabled including LLM (Phase 4). |
+| `oscp` | Strict OSCP mode — disables LLM, enforces Metasploit (1 machine limit). |
+| `cpts` | CPTS mode — all features enabled including LLM (Phase 4). |
 | `show` | Show current exam mode and active restrictions. |
 | `use-msf` | Log a Metasploit usage for OSCP tracking. |
 
@@ -403,15 +405,23 @@ capo writeup status
 
 | Command | Description |
 | :--- | :--- |
-| `capo search <term>` | Fuzzy search the cheatsheet database. |
-| `capo query <service>` | Quick lookup for a specific service (e.g., `capo query kerberos`). |
-| `capo categories` | List all available cheatsheet categories. |
+| `capo search <query>` | Smart search — prioritizes tool matches when query is a known tool, falls back to fuzzy search. |
+| `capo search -c <cat>` | List commands in a specific cheatsheet category. |
+| `capo search` | List all available cheatsheet categories (no query needed). |
+| `capo search --tool <name>` | Strict filter by tool field (e.g., `--tool hydra`). |
+| `capo search --web` | Search DuckDuckGo when local results are sparse. |
+| `capo tools` | List all known pentest tools with cheatsheet coverage counts. |
 
 ```bash
-capo search "asrep roasting" --copy   # Copy first result to clipboard
-capo query smb
-capo query git-dump
-capo categories
+capo search nmap                     # tool-aware: nmap commands first, then related
+capo search kerberos                 # fuzzy search across all entries
+capo search -c smb                   # list all commands in the SMB category
+capo search                          # list all categories
+capo search nmap --web               # also search the web
+capo search --tool hydra             # strict tool-field filter
+capo search "asrep roasting" --copy  # copy first result to clipboard
+capo tools                           # all 169 tools with coverage counts
+capo tools smb                       # filter tools by name
 ```
 
 ## Capo Studio (Web UI)
@@ -431,13 +441,23 @@ capo studio
 
 **Theme switching:** Dark / Dim / Light (bottom of sidebar)
 
-## Reporting
+## Reporting (`capo report`)
 
-| Command | Description |
+Generate a full pentest report from current state. Flags control output format.
+
+| Flag | Description |
 | :--- | :--- |
-| `generate` | Create a Markdown/HTML report from the state. (`--format html`) |
-| `preview` | Preview the report in the terminal. |
-| `timeline` | View the attack timeline. |
+| *(default)* | Generate Markdown report to `evidence/report.md`. |
+| `-f html` | Generate HTML report to `evidence/report.html`. |
+| `--preview` / `-p` | Preview report in terminal instead of writing to file. |
+| `--timeline` / `-t` | Show only the attack timeline. |
+
+```bash
+capo report                # generate markdown report
+capo report -f html        # generate HTML report
+capo report --preview      # preview in terminal
+capo report --timeline     # show just the attack timeline
+```
 
 ## REST API Quick Reference
 

@@ -1,11 +1,10 @@
 """Methodology workflow CLI commands."""
 
+import click
 import typer
 
 from capo.cli.helpers import print_json_data, require_target
 from capo.utils.display import console, print_error, print_info, print_success, print_suggestion
-
-methodology_app = typer.Typer(help="Attack methodology workflows")
 
 
 def _get_methodology(name: str):
@@ -18,6 +17,47 @@ def _get_methodology(name: str):
         print_error(f"Unknown methodology: {name}")
         raise typer.Exit(1)
     return meth, methodology_engine
+
+
+def _run_methodology(args: list[str]):
+    """Start/resume a methodology, optionally showing commands for a specific step."""
+    name = args[0]
+    step_id = args[1] if len(args) > 1 else None
+
+    require_target()
+    meth, engine = _get_methodology(name)
+
+    from capo.state import state_manager
+    state_manager.start_methodology(name)
+
+    if step_id:
+        step = next((s for s in meth.steps if s.id == step_id), None)
+        if not step:
+            print_error(f"Unknown step: {step_id}")
+            valid = ", ".join(s.id for s in meth.steps)
+            print_info(f"Valid steps: {valid}")
+            raise typer.Exit(1)
+        cmds = [step.inject_variables(c) for c in step.commands]
+        print_suggestion(f"[{step.phase}] {step.name}", cmds)
+    else:
+        _show_methodology_steps(meth, engine)
+
+
+class _MethodologyGroup(typer.core.TyperGroup):
+    """Routes unknown subcommands to _run_methodology (e.g. 'capo methodology web-app')."""
+
+    def resolve_command(self, ctx, args):
+        try:
+            return super().resolve_command(ctx, args)
+        except click.UsageError:
+            _run_methodology(list(args))
+            raise typer.Exit()
+
+
+methodology_app = typer.Typer(
+    help="Attack methodology workflows",
+    cls=_MethodologyGroup,
+)
 
 
 @methodology_app.command("list")
@@ -54,35 +94,6 @@ def methodology_list(
         table.add_row(m.name, m.description, str(len(m.steps)), m.source)
     console.print(table)
 
-
-@methodology_app.command("start")
-def methodology_start(
-    name: str = typer.Argument(help="Methodology name"),
-    step_id: str = typer.Argument(None, help="Step ID to show commands for"),
-):
-    """Start a methodology and list its steps, or show commands for a specific step.
-
-    Examples:
-      capo methodology start web-app               # list all step names
-      capo methodology start web-app source-analysis  # show commands for that step
-    """
-    require_target()
-    meth, engine = _get_methodology(name)
-
-    from capo.state import state_manager
-    state_manager.start_methodology(name)
-
-    if step_id:
-        step = next((s for s in meth.steps if s.id == step_id), None)
-        if not step:
-            print_error(f"Unknown step: {step_id}")
-            valid = ", ".join(s.id for s in meth.steps)
-            print_info(f"Valid steps: {valid}")
-            raise typer.Exit(1)
-        cmds = [step.inject_variables(c) for c in step.commands]
-        print_suggestion(f"[{step.phase}] {step.name}", cmds)
-    else:
-        _show_methodology_steps(meth, engine)
 
 
 @methodology_app.command("status")
@@ -219,5 +230,5 @@ def _show_methodology_steps(meth, engine):
         mark = "[green]✓[/green]" if step.id in completed else "[dim]○[/dim]"
         table.add_row(mark, step.id, step.name, step.phase)
 
-    console.print(f"\n[bold]{meth.display_name}[/bold] — run [cyan]capo methodology start {meth.name} <step-id>[/cyan] to see commands\n")
+    console.print(f"\n[bold]{meth.display_name}[/bold] — run [cyan]capo methodology {meth.name} <step-id>[/cyan] to see commands\n")
     console.print(table)
