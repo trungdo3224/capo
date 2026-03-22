@@ -1,5 +1,7 @@
 """Shared CLI helpers used across command groups."""
 
+import json
+
 import typer
 
 from capo.errors import TargetError
@@ -10,6 +12,13 @@ from capo.utils.display import (
     print_success,
     print_warning,
 )
+
+
+def require_target():
+    """Exit with error if no target is set. Use for commands that read state only."""
+    if not state_manager.target:
+        print_error("No target set. Use: capo target set <IP>")
+        raise typer.Exit(1)
 
 
 def ensure_target(target: str | None):
@@ -31,6 +40,17 @@ def ensure_target(target: str | None):
     elif not state_manager.target:
         print_error("No target set. Use: capo target set <IP>")
         raise typer.Exit(1)
+
+
+def print_json_data(data):
+    """Dump data as JSON and print with Rich syntax highlighting."""
+    console.print_json(json.dumps(data, indent=2))
+
+
+def print_section_header(title: str):
+    """Print a styled section header for search result grouping."""
+    from rich.rule import Rule
+    console.print(Rule(f"[bold cyan]{title}[/bold cyan]", style="dim cyan"))
 
 
 def display_cheatsheet_results(results, copy: bool = False):

@@ -2,20 +2,45 @@
 
 import typer
 
+from capo.cli.helpers import require_target
 from capo.state import state_manager
-from capo.utils.display import console, print_error, print_success
+from capo.utils.display import console, print_success
 
 report_app = typer.Typer(help="Report generation & export")
 
 
-@report_app.command("generate")
+@report_app.callback(invoke_without_command=True)
 def report_generate(
+    ctx: typer.Context,
     fmt: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown or html"),
+    preview: bool = typer.Option(False, "--preview", "-p", help="Preview in terminal instead of writing to file"),
+    timeline: bool = typer.Option(False, "--timeline", "-t", help="Show only the attack timeline"),
 ):
-    """Generate a full pentest report from current state."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    """Generate a full pentest report from current state.
+
+    Examples:
+        capo report                # generate markdown report
+        capo report -f html        # generate HTML report
+        capo report --preview      # preview in terminal
+        capo report --timeline     # show just the attack timeline
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    require_target()
+
+    if timeline:
+        from rich.markdown import Markdown
+        from capo.modules.reporting import generate_timeline
+        console.print(Markdown(generate_timeline()))
+        return
+
+    if preview:
+        from rich.markdown import Markdown
+        from capo.modules.reporting import generate_markdown
+        console.print(Markdown(generate_markdown()))
+        return
+
     from capo.modules.reporting import generate_html, generate_markdown
 
     evidence_dir = state_manager.workspace / "evidence"
@@ -30,27 +55,3 @@ def report_generate(
 
     out_file.write_text(content, encoding="utf-8")
     print_success(f"Report written to {out_file}")
-
-
-@report_app.command("preview")
-def report_preview():
-    """Preview the report in the terminal."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
-    from rich.markdown import Markdown
-
-    from capo.modules.reporting import generate_markdown
-    console.print(Markdown(generate_markdown()))
-
-
-@report_app.command("timeline")
-def report_timeline():
-    """Show just the attack timeline."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
-    from rich.markdown import Markdown
-
-    from capo.modules.reporting import generate_timeline
-    console.print(Markdown(generate_timeline()))

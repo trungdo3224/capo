@@ -46,7 +46,7 @@ class TestGlobalOptions:
     def test_help_lists_standalone_commands(self):
         result = runner.invoke(_app(), ["--help"])
         assert result.exit_code == 0
-        for cmd in ("search", "query", "categories", "suggest"):
+        for cmd in ("search", "tools", "suggest"):
             assert cmd in result.output
 
 

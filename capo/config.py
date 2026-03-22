@@ -14,6 +14,9 @@ CURRENT_CAMPAIGN_FILE = CAPO_HOME / "current_campaign.txt"
 # Core cheatsheets shipped with the tool
 CORE_CHEATSHEETS_DIR = Path(__file__).parent / "core_cheatsheets"
 
+# Pentest tools list
+PENTEST_TOOLS_FILE = Path(__file__).parent / "shell" / "pentest_tools.txt"
+
 # Custom triggers file
 CUSTOM_TRIGGERS_FILE = CAPO_HOME / "custom_triggers.yaml"
 
@@ -87,6 +90,21 @@ OSCP_ALLOWED_TOOLS = [
     "impacket", "bloodhound", "ldapsearch",
     "curl", "wget", "nc", "socat",
 ]
+
+
+def load_pentest_tools() -> list[str]:
+    """Load pentest tool names from core + user-custom lists."""
+    tools: set[str] = set()
+    user_file = CAPO_HOME / "pentest_tools.txt"
+
+    for tf in (PENTEST_TOOLS_FILE, user_file):
+        if not tf.exists():
+            continue
+        for line in tf.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                tools.add(line)
+    return sorted(tools)
 
 
 def ensure_dirs():

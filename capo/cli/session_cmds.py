@@ -1,5 +1,6 @@
 """Session management CLI commands."""
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -8,11 +9,36 @@ import typer
 from rich.panel import Panel
 from rich.table import Table
 
+from capo.config import load_pentest_tools
 from capo.errors import SessionError
 from capo.modules.session_db import session_db
 from capo.utils.display import console, print_error, print_success, print_warning
 
 session_app = typer.Typer(help="Session management — named engagement contexts with command tracking")
+
+_SEV_COLORS = {"critical": "bold red", "high": "red", "medium": "yellow", "low": "green", "info": "dim"}
+
+
+def _render_findings_table(findings: list[dict], title: str = "Findings"):
+    """Render a findings table — shared by session show and session findings."""
+    ftable = Table(title=title, border_style="red")
+    ftable.add_column("#", style="dim", justify="right")
+    ftable.add_column("Title", style="white")
+    ftable.add_column("Category", style="cyan")
+    ftable.add_column("Severity", style="yellow")
+    ftable.add_column("Cmd #", style="dim", justify="right")
+    ftable.add_column("Time", style="dim")
+    for f in findings:
+        sev_style = _SEV_COLORS.get(f["severity"], "white")
+        ftable.add_row(
+            str(f["id"]),
+            f["title"],
+            f["category"],
+            f"[{sev_style}]{f['severity']}[/{sev_style}]",
+            str(f["command_id"] or ""),
+            f.get("created_at", "")[:19],
+        )
+    console.print(ftable)
 
 
 def _activate_managers(session: dict):
@@ -178,23 +204,7 @@ def session_show(
     # Findings
     findings = session_db.list_findings(name)
     if findings:
-        ftable = Table(title="Findings", border_style="red")
-        ftable.add_column("#", style="dim", justify="right")
-        ftable.add_column("Title", style="white")
-        ftable.add_column("Category", style="cyan")
-        ftable.add_column("Severity", style="yellow")
-        ftable.add_column("Cmd #", style="dim", justify="right")
-        for f in findings:
-            sev_colors = {"critical": "bold red", "high": "red", "medium": "yellow", "low": "green", "info": "dim"}
-            sev_style = sev_colors.get(f["severity"], "white")
-            ftable.add_row(
-                str(f["id"]),
-                f["title"],
-                f["category"],
-                f"[{sev_style}]{f['severity']}[/{sev_style}]",
-                str(f["command_id"] or ""),
-            )
-        console.print(ftable)
+        _render_findings_table(findings)
 
 
 @session_app.command("delete")
@@ -332,56 +342,15 @@ def session_findings():
         print_warning("No findings yet. Use: capo session mark <cmd_id> --finding 'title'")
         return
 
-    table = Table(
-        title=f"Findings — {session_db.active_session_name}",
-        border_style="red",
-    )
-    table.add_column("#", style="dim", justify="right")
-    table.add_column("Title", style="white")
-    table.add_column("Category", style="cyan")
-    table.add_column("Severity", style="yellow")
-    table.add_column("Cmd #", style="dim", justify="right")
-    table.add_column("Time", style="dim")
-
-    sev_colors = {"critical": "bold red", "high": "red", "medium": "yellow", "low": "green", "info": "dim"}
-    for f in findings:
-        sev_style = sev_colors.get(f["severity"], "white")
-        table.add_row(
-            str(f["id"]),
-            f["title"],
-            f["category"],
-            f"[{sev_style}]{f['severity']}[/{sev_style}]",
-            str(f["command_id"] or ""),
-            f["created_at"][:19],
-        )
-    console.print(table)
+    _render_findings_table(findings, title=f"Findings — {session_db.active_session_name}")
 
 
 # ── Shell hook ────────────────────────────────────────────
 
 
-import os
-
-
 def _hook_is_loaded() -> bool:
     """Check if the shell hook is active in the current shell."""
     return os.environ.get("_CAPO_HOOK_LOADED") == "1"
-
-
-def _load_tools_list() -> list[str]:
-    """Load pentest tool names from core + user-custom lists."""
-    tools: set[str] = set()
-    core_file = Path(__file__).parent.parent / "shell" / "pentest_tools.txt"
-    user_file = Path(os.environ.get("CAPO_HOME", Path.home() / ".capo")) / "pentest_tools.txt"
-
-    for tf in (core_file, user_file):
-        if not tf.exists():
-            continue
-        for line in tf.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                tools.add(line)
-    return sorted(tools)
 
 
 _HOOK_TEMPLATE = r"""
@@ -494,7 +463,7 @@ def session_hook():
     """
     from capo.config import CURRENT_SESSION_FILE
 
-    tools = _load_tools_list()
+    tools = load_pentest_tools()
 
     # Only allow safe tool names (alphanumeric, dash, underscore, dot)
     _safe_tool_re = re.compile(r'^[a-zA-Z0-9._-]+$')

@@ -2,6 +2,7 @@
 
 import typer
 
+from capo.cli.helpers import print_json_data, require_target
 from capo.state import state_manager
 from capo.utils.display import (
     console,
@@ -22,9 +23,7 @@ def state_show(
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show full target state."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     if as_json:
         console.print_json(state_manager.export_state())
     else:
@@ -36,13 +35,10 @@ def state_ports(
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show discovered ports and services."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     ports = state_manager.get("ports", [])
     if as_json:
-        import json as _json
-        console.print_json(_json.dumps(ports, indent=2))
+        print_json_data(ports)
     elif ports:
         print_ports_table(ports)
     else:
@@ -54,13 +50,10 @@ def state_users(
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show discovered users."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     users = state_manager.get("users", [])
     if as_json:
-        import json as _json
-        console.print_json(_json.dumps(users, indent=2))
+        print_json_data(users)
     elif users:
         for u in users:
             console.print(f"  [cyan]•[/cyan] {u}")
@@ -73,13 +66,10 @@ def state_creds(
     as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
 ):
     """Show discovered credentials."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     creds = state_manager.get("credentials", [])
     if as_json:
-        import json as _json
-        console.print_json(_json.dumps(creds, indent=2))
+        print_json_data(creds)
     elif creds:
         print_credentials_table(creds)
     else:
@@ -89,9 +79,7 @@ def state_creds(
 @state_app.command("dirs")
 def state_dirs():
     """Show discovered web directories."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     from rich.table import Table
     dirs = state_manager.get("directories", [])
     if dirs:
@@ -111,9 +99,7 @@ def state_export(
     section: str = typer.Option("all", "--section", "-s", help="CSV section: ports, users, credentials, hashes, shares"),
 ):
     """Export state data in various formats."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     if fmt == "json":
         console.print_json(state_manager.export_state())
     elif fmt == "csv":
@@ -129,9 +115,7 @@ def state_export(
 @state_app.command("history")
 def state_history():
     """Show scan execution history."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     from rich.table import Table
     history = state_manager.get("scan_history", [])
     if history:
@@ -157,61 +141,68 @@ def state_history():
 @state_app.command("workspace")
 def state_workspace():
     """Show workspace directory structure."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     print_directory_tree(state_manager.workspace)
 
 
-@state_app.command("sync-files")
-def state_sync_files():
-    """Regenerate loot files (users.txt, hashes.txt, creds.txt) from state."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
-    ws = state_manager.workspace
-    loot = ws / "loot"
-    loot.mkdir(parents=True, exist_ok=True)
+@state_app.command("refresh")
+def state_refresh(
+    notes_only: bool = typer.Option(False, "--notes", "-n", help="Only regenerate notes.md"),
+    files_only: bool = typer.Option(False, "--files", "-f", help="Only regenerate loot files"),
+):
+    """Regenerate loot files and notes.md from current state.
 
-    users = state_manager.get("users", [])
-    if users:
-        (loot / "users.txt").write_text("\n".join(users) + "\n", encoding="utf-8")
-        # Filtered list: skip service/system accounts
-        filtered = [
-            u for u in users
-            if not u.startswith("SM_")
-            and not u.startswith("HealthMailbox")
-            and not u.startswith("$")
-            and u not in ("Guest", "DefaultAccount", "krbtgt")
-        ]
-        (loot / "users_filtered.txt").write_text("\n".join(filtered) + "\n", encoding="utf-8")
-        print_success(f"users.txt ({len(users)}), users_filtered.txt ({len(filtered)})")
+    Examples:
+        capo state refresh          # refresh everything
+        capo state refresh --notes  # only regenerate notes.md
+        capo state refresh --files  # only regenerate loot files
+    """
+    require_target()
 
-    hashes = state_manager.get("hashes", [])
-    if hashes:
-        (loot / "hashes.txt").write_text(
-            "\n".join(h["hash"] for h in hashes) + "\n", encoding="utf-8"
-        )
-        print_success(f"hashes.txt ({len(hashes)})")
+    do_files = not notes_only
+    do_notes = not files_only
 
-    creds = state_manager.get("credentials", [])
-    if creds:
-        lines = [f"{c['username']}:{c['password']}" for c in creds]
-        (loot / "creds.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
-        print_success(f"creds.txt ({len(creds)})")
+    if do_files:
+        ws = state_manager.workspace
+        loot = ws / "loot"
+        loot.mkdir(parents=True, exist_ok=True)
 
-    if not users and not hashes and not creds:
-        print_warning("No data to sync yet.")
+        synced = False
+        users = state_manager.get("users", [])
+        if users:
+            (loot / "users.txt").write_text("\n".join(users) + "\n", encoding="utf-8")
+            filtered = [
+                u for u in users
+                if not u.startswith("SM_")
+                and not u.startswith("HealthMailbox")
+                and not u.startswith("$")
+                and u not in ("Guest", "DefaultAccount", "krbtgt")
+            ]
+            (loot / "users_filtered.txt").write_text("\n".join(filtered) + "\n", encoding="utf-8")
+            print_success(f"users.txt ({len(users)}), users_filtered.txt ({len(filtered)})")
+            synced = True
 
+        hashes = state_manager.get("hashes", [])
+        if hashes:
+            (loot / "hashes.txt").write_text(
+                "\n".join(h["hash"] for h in hashes) + "\n", encoding="utf-8"
+            )
+            print_success(f"hashes.txt ({len(hashes)})")
+            synced = True
 
-@state_app.command("refresh-notes")
-def state_refresh_notes():
-    """Regenerate notes.md from current state data."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
-    result = state_manager.refresh_notes()
-    if result:
-        print_success(f"Updated {result.name}")
-    else:
-        print_error("Failed to refresh notes.")
+        creds = state_manager.get("credentials", [])
+        if creds:
+            lines = [f"{c['username']}:{c['password']}" for c in creds]
+            (loot / "creds.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+            print_success(f"creds.txt ({len(creds)})")
+            synced = True
+
+        if not synced:
+            print_warning("No data to sync yet.")
+
+    if do_notes:
+        result = state_manager.refresh_notes()
+        if result:
+            print_success(f"Updated {result.name}")
+        else:
+            print_error("Failed to refresh notes.")

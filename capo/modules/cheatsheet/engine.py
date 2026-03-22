@@ -195,6 +195,11 @@ class CheatsheetEngine:
         names = self._categories.get(category, [])
         return [self._entries[n] for n in names if n in self._entries]
 
+    def get_by_tool(self, tool: str) -> list[CheatsheetEntry]:
+        """Get all entries that use a specific tool (case-insensitive)."""
+        tool_lower = tool.lower()
+        return [e for e in self._entries.values() if e.tool.lower() == tool_lower]
+
     def get_by_tag(self, tag: str) -> list[CheatsheetEntry]:
         """Get all entries with a specific tag."""
         return [e for e in self._entries.values() if tag.lower() in [t.lower() for t in e.tags]]

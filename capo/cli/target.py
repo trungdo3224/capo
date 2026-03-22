@@ -2,9 +2,10 @@
 
 import typer
 
+from capo.campaign import campaign_manager
+from capo.cli.helpers import require_target
 from capo.errors import TargetError
 from capo.state import state_manager
-from capo.campaign import campaign_manager
 from capo.utils.display import (
     print_directory_tree,
     print_error,
@@ -50,10 +51,7 @@ def target_show():
     """Show current target information."""
     if campaign_manager.active:
         print_info(f"Active Campaign: {campaign_manager.name}")
-        
-    if not state_manager.target:
-        print_error("No target set. Use: capo target set <IP>")
-        raise typer.Exit(1)
+    require_target()
     print_state_table(state_manager.state, mgr=state_manager)
 
 
@@ -110,9 +108,7 @@ def target_set_lhost(
     lport: int = typer.Option(443, "--lport", "-p", help="Listener port"),
 ):
     """Set your local host IP for reverse shells and pivoting."""
-    if not state_manager.target:
-        print_error("No target set first.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.set("lhost", lhost)
     state_manager.set("lport", lport)
     print_success(f"LHOST={lhost}, LPORT={lport}")
@@ -123,9 +119,7 @@ def target_add_domain(
     domain: str = typer.Argument(..., help="Domain name to add"),
 ):
     """Add an associated domain name to the target."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_domain(domain)
     print_success(f"Added domain: {domain}")
     domains = state_manager.get("domains", [])
@@ -138,9 +132,7 @@ def target_add_user(
     username: str = typer.Argument(..., help="Username to add"),
 ):
     """Manually add a discovered username."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_user(username)
     print_success(f"Added user: {username}")
 
@@ -152,9 +144,7 @@ def target_add_cred(
     service: str = typer.Option("", "--service", "-s", help="Service name"),
 ):
     """Add discovered credentials."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_credential(username, password, service)
     print_success(f"Credential added: {username}")
 
@@ -165,9 +155,7 @@ def target_add_hash(
     username: str = typer.Option("", "--user", "-u", help="Associated username"),
 ):
     """Add a discovered hash."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_hash(hash_value, username)
     print_success("Hash added.")
 
@@ -177,9 +165,7 @@ def target_add_vhost(
     vhost: str = typer.Argument(..., help="Domain or subdomain to add"),
 ):
     """Manually add a discovered vhost/subdomain."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_vhost(vhost)
     print_success(f"Added vhost: {vhost}")
 
@@ -190,9 +176,7 @@ def target_flag(
     value: str = typer.Argument(..., help="Flag value"),
 ):
     """Record a captured flag (local.txt / proof.txt)."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     key = f"{flag_type}_txt"
     state_manager.set_flag(key, value)
     print_success(f"🚩 {flag_type}.txt = {value}")
@@ -203,8 +187,6 @@ def target_note(
     note: str = typer.Argument(..., help="Note text"),
 ):
     """Add a quick note to the target."""
-    if not state_manager.target:
-        print_error("No target set.")
-        raise typer.Exit(1)
+    require_target()
     state_manager.add_note(note)
     print_success("Note added.")

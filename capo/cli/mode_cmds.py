@@ -2,8 +2,8 @@
 
 import typer
 
-from capo.state import state_manager
-from capo.utils.display import console, print_error
+from capo.cli.helpers import require_target
+from capo.utils.display import console
 
 mode_app = typer.Typer(help="Exam mode management (OSCP/CPTS)")
 
@@ -48,8 +48,6 @@ def register_suggest_command(app: typer.Typer):
     @app.command("suggest")
     def suggest():
         """Show context-aware suggestions based on current state."""
-        if not state_manager.target:
-            print_error("No target set.")
-            raise typer.Exit(1)
+        require_target()
         from capo.modules.triggers import check_triggers
         check_triggers()
