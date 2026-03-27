@@ -199,8 +199,10 @@ class BaseWrapper(ABC):
 
             if parse_output and result.returncode == 0:
                 self.parse_output(result, output_file)
-                _show_next_steps(self)
-                _auto_check_methodologies()
+                from capo.config import output_config
+                if not output_config.quiet:
+                    _show_next_steps(self)
+                    _auto_check_methodologies()
 
             return result
 

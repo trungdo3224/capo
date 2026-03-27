@@ -33,6 +33,9 @@ def print_command(command: str):
 
 
 def print_success(message: str):
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     console.print(f"[bold green][✓][/bold green] {message}")
 
 
@@ -45,11 +48,17 @@ def print_warning(message: str):
 
 
 def print_info(message: str):
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     console.print(f"[bold blue][*][/bold blue] {message}")
 
 
 def print_suggestion(title: str, commands: list[str]):
     """Print context-aware suggestions after a scan."""
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     console.print()
     panel_content = ""
     for cmd in commands:
@@ -137,6 +146,9 @@ def print_state_table(state: dict, mgr=None):
 
 def print_ports_table(ports: list[dict]):
     """Print detailed port/service table."""
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     table = Table(title="Open Ports & Services", border_style="cyan")
     table.add_column("Port", style="bold white", justify="right")
     table.add_column("Proto", style="dim")

@@ -257,6 +257,9 @@ def _inject_vars(text: str) -> str:
 
 def check_triggers():
     """Check current state and print relevant suggestions."""
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     open_ports = state_manager.get_open_ports()
     if not open_ports:
         return
@@ -278,6 +281,9 @@ def check_triggers():
 
 def check_port_trigger(port: int):
     """Check trigger for a specific newly discovered port."""
+    from capo.config import output_config
+    if output_config.quiet:
+        return
     merged = get_merged_triggers()
     triggers = merged.get(port, [])
     for trigger in triggers:

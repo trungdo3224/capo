@@ -21,9 +21,16 @@ app = typer.Typer(
 def main(
     ctx: typer.Context,
     version: bool = typer.Option(False, "--version", "-v", help="Show version"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress suggestions & banners"),
+    verbose: bool = typer.Option(False, "--verbose", help="Full output (overrides quiet config)"),
 ):
     """C.A.P.O - Context-Aware Pentest Orchestrator."""
     ensure_dirs()
+    from capo.config import output_config
+    if verbose:
+        output_config.quiet = False
+    elif quiet:
+        output_config.quiet = True
     if version:
         console.print(f"C.A.P.O v{__version__}")
         raise typer.Exit()
@@ -47,6 +54,7 @@ from capo.cli.studio_cmds import app as studio_app
 from capo.cli.kerberos_cmds import kerberos_app
 from capo.cli.writeup_cmds import writeup_app
 from capo.cli.session_cmds import session_app
+from capo.cli.enumerate_cmds import enumerate_app
 
 app.add_typer(target_app, name="target")
 app.add_typer(scan_app, name="scan")
@@ -62,6 +70,7 @@ app.add_typer(methodology_app, name="methodology")
 app.add_typer(studio_app, name="studio")
 app.add_typer(writeup_app, name="writeup")
 app.add_typer(session_app, name="session")
+app.add_typer(enumerate_app, name="enumerate")
 
 
 # ─────────────── Register Standalone Commands ───────────────

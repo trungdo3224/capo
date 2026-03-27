@@ -1,0 +1,378 @@
+# C.A.P.O Enumerate Registry
+# Defines which commands to run per service during `capo enumerate`.
+#
+# Fields:
+#   ports:    List of ports that map to this service
+#   commands: Ordered list of enumeration commands
+#     - name:    Human-readable label
+#       tool:    Binary name (checked with `which`)
+#       cmd:     Command template — variables: {IP}, {DOMAIN}, {USER}, {PASS}
+#       auth:    true = only runs when -u/-p provided
+#       timeout: Max seconds before kill (default 60)
+#       parser:  Python parser function name (optional — raw output saved regardless)
+
+services:
+  ftp:
+    ports: [21]
+    commands:
+      - name: "FTP NSE scripts"
+        tool: nmap
+        cmd: "nmap --script ftp-anon,ftp-bounce,ftp-syst,ftp-vsftpd-backdoor -p 21 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  ssh:
+    ports: [22]
+    commands:
+      - name: "SSH version & algorithms"
+        tool: nmap
+        cmd: "nmap -sV -p 22 --script ssh2-enum-algos,ssh-auth-methods {IP}"
+        auth: false
+        timeout: 30
+        parser: nmap_scripts
+
+  smtp:
+    ports: [25, 587]
+    commands:
+      - name: "SMTP user enum (VRFY)"
+        tool: smtp-user-enum
+        cmd: "smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt -t {IP}"
+        auth: false
+        timeout: 120
+        parser: smtp_user_enum
+
+      - name: "SMTP NSE scripts"
+        tool: nmap
+        cmd: "nmap --script smtp-commands,smtp-enum-users,smtp-open-relay -p 25 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  dns:
+    ports: [53]
+    commands:
+      - name: "DNS zone transfer"
+        tool: dig
+        cmd: "dig axfr @{IP} {DOMAIN}"
+        auth: false
+        timeout: 30
+        parser: dig_axfr
+
+      - name: "DNS any query"
+        tool: dig
+        cmd: "dig any {DOMAIN} @{IP}"
+        auth: false
+        timeout: 15
+
+  http:
+    ports: [80, 8080, 8000, 8888]
+    commands:
+      - name: "Web fingerprint"
+        tool: whatweb
+        cmd: "whatweb http://{IP}:{PORT} -a 3 --color=never"
+        auth: false
+        timeout: 30
+        parser: whatweb
+
+      - name: "HTTP headers"
+        tool: curl
+        cmd: "curl -sI http://{IP}:{PORT}"
+        auth: false
+        timeout: 10
+        parser: http_headers
+
+      - name: "robots.txt"
+        tool: curl
+        cmd: "curl -s http://{IP}:{PORT}/robots.txt"
+        auth: false
+        timeout: 10
+
+      - name: "Directory fuzz (small)"
+        tool: ffuf
+        cmd: "ffuf -u http://{IP}:{PORT}/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_dirs.json -of json"
+        auth: false
+        timeout: 300
+        parser: ffuf_json
+
+      - name: "Nikto scan"
+        tool: nikto
+        cmd: "nikto -h http://{IP}:{PORT} -o {OUTPUT_DIR}/nikto.txt"
+        auth: false
+        timeout: 300
+
+  https:
+    ports: [443, 8443]
+    commands:
+      - name: "SSL scan"
+        tool: sslscan
+        cmd: "sslscan {IP}:{PORT}"
+        auth: false
+        timeout: 30
+
+      - name: "Web fingerprint (HTTPS)"
+        tool: whatweb
+        cmd: "whatweb https://{IP}:{PORT} -a 3 --color=never"
+        auth: false
+        timeout: 30
+        parser: whatweb
+
+      - name: "HTTPS headers"
+        tool: curl
+        cmd: "curl -skI https://{IP}:{PORT}"
+        auth: false
+        timeout: 10
+        parser: http_headers
+
+      - name: "robots.txt (HTTPS)"
+        tool: curl
+        cmd: "curl -sk https://{IP}:{PORT}/robots.txt"
+        auth: false
+        timeout: 10
+
+      - name: "Directory fuzz HTTPS (small)"
+        tool: ffuf
+        cmd: "ffuf -u https://{IP}:{PORT}/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_https_dirs.json -of json"
+        auth: false
+        timeout: 300
+        parser: ffuf_json
+
+  smb:
+    ports: [139, 445]
+    commands:
+      - name: "SMB null shares"
+        tool: nxc
+        cmd: "nxc smb {IP} -u '' -p '' --shares"
+        auth: false
+        timeout: 30
+        parser: nxc_shares
+
+      - name: "SMB guest shares"
+        tool: nxc
+        cmd: "nxc smb {IP} -u 'Guest' -p '' --shares"
+        auth: false
+        timeout: 30
+        parser: nxc_shares
+
+      - name: "smbclient null list"
+        tool: smbclient
+        cmd: "smbclient -N -L //{IP}"
+        auth: false
+        timeout: 30
+        parser: smbclient_list
+
+      - name: "smbmap null"
+        tool: smbmap
+        cmd: "smbmap -H {IP} -u '' -p ''"
+        auth: false
+        timeout: 30
+
+      - name: "enum4linux-ng full"
+        tool: enum4linux-ng
+        cmd: "enum4linux-ng -A {IP}"
+        auth: false
+        timeout: 180
+        parser: enum4linux_ng
+
+      - name: "RID brute"
+        tool: nxc
+        cmd: "nxc smb {IP} -u '' -p '' --rid-brute 5000"
+        auth: false
+        timeout: 120
+        parser: nxc_rid
+
+      - name: "Password policy"
+        tool: nxc
+        cmd: "nxc smb {IP} -u '' -p '' --pass-pol"
+        auth: false
+        timeout: 30
+
+      - name: "SMB auth shares"
+        tool: nxc
+        cmd: "nxc smb {IP} -u {USER} -p {PASS} --shares"
+        auth: true
+        timeout: 30
+        parser: nxc_shares
+
+      - name: "SMB auth users"
+        tool: nxc
+        cmd: "nxc smb {IP} -u {USER} -p {PASS} --users"
+        auth: true
+        timeout: 60
+        parser: nxc_users
+
+  rpc:
+    ports: [111]
+    commands:
+      - name: "RPC info"
+        tool: rpcinfo
+        cmd: "rpcinfo -p {IP}"
+        auth: false
+        timeout: 15
+
+      - name: "NFS exports (via RPC)"
+        tool: showmount
+        cmd: "showmount -e {IP}"
+        auth: false
+        timeout: 15
+        parser: showmount
+
+  msrpc:
+    ports: [135]
+    commands:
+      - name: "RPC null enum"
+        tool: rpcclient
+        cmd: "rpcclient -U '' -N {IP} -c 'enumdomusers; enumdomgroups; querydominfo'"
+        auth: false
+        timeout: 30
+        parser: rpcclient_enum
+
+  ldap:
+    ports: [389, 636]
+    commands:
+      - name: "LDAP anonymous bind"
+        tool: ldapsearch
+        cmd: "ldapsearch -x -H ldap://{IP} -b '' -s base namingContexts"
+        auth: false
+        timeout: 15
+        parser: ldapsearch_base
+
+      - name: "LDAP NXC enum"
+        tool: nxc
+        cmd: "nxc ldap {IP} -u '' -p '' -M get-desc-users"
+        auth: false
+        timeout: 30
+
+      - name: "LDAP auth users"
+        tool: nxc
+        cmd: "nxc ldap {IP} -u {USER} -p {PASS} --users"
+        auth: true
+        timeout: 60
+        parser: nxc_users
+
+  kerberos:
+    ports: [88]
+    commands:
+      - name: "AS-REP roast (no auth)"
+        tool: impacket-GetNPUsers
+        cmd: "impacket-GetNPUsers {DOMAIN}/ -usersfile /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt -no-pass -dc-ip {IP}"
+        auth: false
+        timeout: 120
+        parser: asrep_roast
+
+      - name: "Kerberoast (auth)"
+        tool: impacket-GetUserSPNs
+        cmd: "impacket-GetUserSPNs {DOMAIN}/{USER}:{PASS} -dc-ip {IP} -request"
+        auth: true
+        timeout: 60
+        parser: kerberoast
+
+      - name: "BloodHound collection"
+        tool: bloodhound-python
+        cmd: "bloodhound-python -c All -u {USER} -p {PASS} -d {DOMAIN} -ns {IP}"
+        auth: true
+        timeout: 300
+
+      - name: "ADCS enum"
+        tool: certipy-ad
+        cmd: "certipy-ad find -u {USER}@{DOMAIN} -p {PASS} -dc-ip {IP} -vulnerable"
+        auth: true
+        timeout: 120
+
+  snmp:
+    ports: [161]
+    commands:
+      - name: "SNMP community brute"
+        tool: onesixtyone
+        cmd: "onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt {IP}"
+        auth: false
+        timeout: 60
+        parser: onesixtyone
+
+      - name: "SNMP walk (public)"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c public {IP}"
+        auth: false
+        timeout: 120
+        parser: snmpwalk
+
+      - name: "SNMP system info"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c public {IP} 1.3.6.1.2.1.1"
+        auth: false
+        timeout: 30
+
+  nfs:
+    ports: [2049]
+    commands:
+      - name: "NFS exports"
+        tool: showmount
+        cmd: "showmount -e {IP}"
+        auth: false
+        timeout: 15
+        parser: showmount
+
+  mssql:
+    ports: [1433]
+    commands:
+      - name: "MSSQL NXC enum"
+        tool: nxc
+        cmd: "nxc mssql {IP} -u {USER} -p {PASS}"
+        auth: true
+        timeout: 30
+
+      - name: "MSSQL NSE scripts"
+        tool: nmap
+        cmd: "nmap --script ms-sql-info,ms-sql-config,ms-sql-ntlm-info -p 1433 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  mysql:
+    ports: [3306]
+    commands:
+      - name: "MySQL NSE scripts"
+        tool: nmap
+        cmd: "nmap --script mysql-info,mysql-enum,mysql-databases -p 3306 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  rdp:
+    ports: [3389]
+    commands:
+      - name: "RDP NSE enum"
+        tool: nmap
+        cmd: "nmap -sV --script rdp-enum-encryption,rdp-vuln-ms12-020,rdp-ntlm-info -p 3389 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  winrm:
+    ports: [5985, 5986]
+    commands:
+      - name: "WinRM NXC check"
+        tool: nxc
+        cmd: "nxc winrm {IP} -u {USER} -p {PASS}"
+        auth: true
+        timeout: 30
+
+  redis:
+    ports: [6379]
+    commands:
+      - name: "Redis info (no auth)"
+        tool: redis-cli
+        cmd: "redis-cli -h {IP} INFO"
+        auth: false
+        timeout: 10
+
+  # Special: runs searchsploit for all discovered service+version combos
+  versions:
+    ports: []
+    commands:
+      - name: "SearchSploit lookup"
+        tool: searchsploit
+        cmd: "searchsploit --color=never {SERVICE} {VERSION}"
+        auth: false
+        timeout: 15
+        parser: searchsploit

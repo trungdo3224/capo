@@ -1,0 +1,117 @@
+name: initial-enumeration
+display_name: "Initial Enumeration"
+description: "Universal starting methodology — from target IP to full attack surface map. Port scan, service identification, deep enumeration, low-hanging fruit checks, and version-based exploit lookup. Always applicable as the first step for any target."
+
+applicable_when: {}
+
+steps:
+  - id: quick-tcp-scan
+    name: "Full TCP Port Scan"
+    phase: recon
+    description: "Run a fast all-ports TCP scan to discover open services. This is always the first step."
+    commands:
+      - "capo scan quick"
+      - "nmap -p- --min-rate 5000 -Pn {IP} -oA scans/quick_tcp"
+    check:
+      ports_min: 1
+
+  - id: udp-scan
+    name: "UDP Top Ports Scan"
+    phase: recon
+    description: "Scan top UDP ports — SNMP (161), TFTP (69), NTP (123), and DNS (53) are commonly missed on TCP-only scans."
+    commands:
+      - "capo scan udp"
+      - "sudo nmap -sU --top-ports 50 --min-rate 3000 -Pn {IP} -oA scans/udp_top50"
+
+  - id: detailed-version-scan
+    name: "Version Detection & Default Scripts"
+    phase: recon
+    description: "Run version detection and default scripts on all discovered open ports. Identifies exact software versions needed for exploit lookup."
+    commands:
+      - "capo scan detailed"
+      - "nmap -sCV -p <OPEN_PORTS> -Pn {IP} -oA scans/detailed"
+    check:
+      ports_min: 1
+
+  - id: service-enumeration
+    name: "Automated Service Enumeration"
+    phase: enumeration
+    description: "Run automated enumeration against all discovered services. Extracts users, shares, domains, directories, and technologies into state."
+    commands:
+      - "capo enumerate"
+      - "capo enumerate smb http  # scope to specific services"
+      - "capo enumerate -u {USER} -p {PASSWORD}  # if credentials available"
+    check:
+      users_min: 1
+
+  - id: smb-shares-check
+    name: "SMB Share Enumeration"
+    phase: enumeration
+    description: "If SMB is open (139/445), check for readable/writable shares via null session, guest, and authenticated access. Shares often leak sensitive files, configs, and credentials."
+    commands:
+      - "smbclient -N -L //{IP}"
+      - "smbmap -H {IP} -u '' -p ''"
+      - "nxc smb {IP} -u '' -p '' --shares"
+      - "nxc smb {IP} -u 'Guest' -p '' --shares"
+    check:
+      shares_min: 1
+
+  - id: web-discovery
+    name: "Web Application Discovery"
+    phase: enumeration
+    description: "If HTTP/HTTPS is open, fingerprint the web stack and fuzz for hidden directories and files. Check robots.txt, page source, and response headers."
+    commands:
+      - "whatweb http://{IP}"
+      - "curl -sI http://{IP}"
+      - "curl -s http://{IP}/robots.txt"
+      - "capo web fuzz"
+      - "ffuf -u http://{IP}/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt -ac -mc 200,204,301,302,307,401,403"
+    check:
+      directories_min: 1
+
+  - id: low-hanging-fruit
+    name: "Low-Hanging Fruit Checks"
+    phase: enumeration
+    description: "Check for quick wins: anonymous FTP, SNMP public community, null SMB/RPC sessions, open NFS exports, and default credentials on discovered services."
+    commands:
+      - "ftp {IP}  # try anonymous:anonymous"
+      - "snmpwalk -v2c -c public {IP}"
+      - "showmount -e {IP}"
+      - "rpcclient -U '' -N {IP} -c 'enumdomusers'"
+      - "ldapsearch -x -H ldap://{IP} -b '' -s base namingContexts"
+      - "# Default creds: admin:admin, admin:password, root:root, sa:''"
+
+  - id: version-exploit-lookup
+    name: "Version-Based Exploit Search"
+    phase: enumeration
+    description: "Search for known exploits matching discovered service versions. Cross-reference with ExploitDB and CVE databases."
+    commands:
+      - "searchsploit <service> <version>  # for each service+version from scan"
+      - "capo enumerate  # runs searchsploit automatically for all versions"
+      - "# Google: <service> <version> exploit OR CVE OR RCE"
+
+  - id: credential-check
+    name: "Credential Testing & Spraying"
+    phase: credential-access
+    description: "If usernames were discovered, attempt password spraying or brute force on accessible services. Check password policy first to avoid lockout."
+    commands:
+      - "nxc smb {IP} -u '' -p '' --pass-pol  # check lockout policy first!"
+      - "hydra -l {USER} -P /usr/share/wordlists/rockyou.txt ssh://{IP} -t 4"
+      - "nxc smb {IP} -u users.txt -p 'Password1' --continue-on-success"
+      - "nxc smb {IP} -u users.txt -p users.txt --no-bruteforce  # user=pass check"
+      - "kerbrute userenum -d {DOMAIN} --dc {IP} users.txt  # if Kerberos port 88 open"
+    check:
+      credentials_min: 1
+
+  - id: attack-surface-summary
+    name: "Attack Surface Review & Path Selection"
+    phase: enumeration
+    description: "Review all findings and decide on the primary attack path. Choose a specialized methodology based on what was discovered."
+    commands:
+      - "capo state show"
+      - "capo methodology list"
+      - "# AD environment (ports 88,389,445) -> capo methodology show ad-kill-chain"
+      - "# Web application found -> capo methodology show web-app"
+      - "# Linux shell obtained -> capo methodology show linux-privesc"
+      - "# Windows shell obtained -> capo methodology show windows-privesc"
+      - "# ADCS detected -> capo methodology show ad-adcs-chain"

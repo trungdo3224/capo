@@ -1,5 +1,6 @@
 """Global configuration and paths for C.A.P.O."""
 
+import json
 import os
 from pathlib import Path
 
@@ -13,6 +14,9 @@ CURRENT_CAMPAIGN_FILE = CAPO_HOME / "current_campaign.txt"
 
 # Core cheatsheets shipped with the tool
 CORE_CHEATSHEETS_DIR = Path(__file__).parent / "core_cheatsheets"
+
+# Enumerate registry
+CORE_ENUMERATE_REGISTRY = Path(__file__).parent / "core_enumerate" / "registry.yaml"
 
 # Pentest tools list
 PENTEST_TOOLS_FILE = Path(__file__).parent / "shell" / "pentest_tools.txt"
@@ -105,6 +109,40 @@ def load_pentest_tools() -> list[str]:
             if line and not line.startswith("#"):
                 tools.add(line)
     return sorted(tools)
+
+
+class OutputConfig:
+    """Global output verbosity control.
+
+    Reads persistent preference from ~/.capo/config.json and can be
+    overridden per-invocation with ``capo -q`` / ``capo --verbose``.
+    """
+
+    def __init__(self):
+        self.quiet: bool = False
+        self._load()
+
+    def _load(self):
+        if CONFIG_FILE.exists():
+            try:
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+                self.quiet = data.get("quiet", False)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+    def save(self):
+        CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data: dict = {}
+        if CONFIG_FILE.exists():
+            try:
+                data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                pass
+        data["quiet"] = self.quiet
+        CONFIG_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+output_config = OutputConfig()
 
 
 def ensure_dirs():
