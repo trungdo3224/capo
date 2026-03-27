@@ -328,6 +328,14 @@ PARSERS: dict[str, callable] = {
 # Engine
 # ---------------------------------------------------------------------------
 
+# Wordlist size presets — maps size name to seclists path
+WORDLIST_PRESETS: dict[str, str] = {
+    "small": "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",
+    "medium": "/usr/share/seclists/Discovery/Web-Content/raft-medium-words.txt",
+    "large": "/usr/share/seclists/Discovery/Web-Content/raft-large-words.txt",
+}
+
+
 class EnumerateEngine:
     """Loads the registry and runs enumeration commands."""
 
@@ -394,7 +402,8 @@ class EnumerateEngine:
         return results
 
     def _inject(self, cmd: str, port: int, output_dir: Path,
-                username: str = "", password: str = "") -> str:
+                username: str = "", password: str = "",
+                wordlist: str = "") -> str:
         """Replace all {VARIABLE} placeholders in a command string."""
         ip = state_manager.get_var("IP") or ""
         domain = state_manager.get_var("DOMAIN") or ""
@@ -406,6 +415,7 @@ class EnumerateEngine:
             "{USER}": username,
             "{PASS}": password,
             "{OUTPUT_DIR}": str(output_dir),
+            "{WORDLIST}": wordlist,
         }
         for k, v in replacements.items():
             cmd = cmd.replace(k, v)
@@ -414,14 +424,15 @@ class EnumerateEngine:
     def _run_cmd(self, name: str, tool: str, cmd_template: str, port: int,
                  output_dir: Path, timeout: int,
                  parser_name: str | None,
-                 username: str = "", password: str = "") -> CmdResult:
+                 username: str = "", password: str = "",
+                 wordlist: str = "") -> CmdResult:
         """Execute a single enumeration command."""
         # Check tool availability
         if not shutil.which(tool):
             return CmdResult(name=name, tool=tool, cmd=cmd_template,
                              status="skipped", findings="not installed")
 
-        cmd_str = self._inject(cmd_template, port, output_dir, username, password)
+        cmd_str = self._inject(cmd_template, port, output_dir, username, password, wordlist)
         print_command(cmd_str)
 
         # Save output to file
@@ -532,8 +543,16 @@ class EnumerateEngine:
                 ))
         return results
 
+    def _resolve_wordlist(self, wordlist: str, wordlist_size: str) -> str:
+        """Resolve the wordlist path from custom path or size preset."""
+        if wordlist:
+            return wordlist
+        size = wordlist_size.lower().strip()
+        return WORDLIST_PRESETS.get(size, WORDLIST_PRESETS["small"])
+
     def run(self, services: list[str] | None = None,
-            username: str = "", password: str = "") -> list[ServiceResult]:
+            username: str = "", password: str = "",
+            wordlist: str = "", wordlist_size: str = "small") -> list[ServiceResult]:
         """Run enumeration and return structured results.
 
         Args:
@@ -541,8 +560,11 @@ class EnumerateEngine:
                       None = enumerate all services with open ports.
             username: Credential for auth-required commands.
             password: Credential for auth-required commands.
+            wordlist: Custom wordlist path (overrides wordlist_size).
+            wordlist_size: Preset size — small, medium, large.
         """
         has_creds = bool(username and password)
+        resolved_wordlist = self._resolve_wordlist(wordlist, wordlist_size)
         matched = self._resolve_services(services)
 
         if not matched:
@@ -588,6 +610,7 @@ class EnumerateEngine:
                     parser_name=parser_name,
                     username=username,
                     password=password,
+                    wordlist=resolved_wordlist,
                 )
 
                 svc_result.commands.append(cr)

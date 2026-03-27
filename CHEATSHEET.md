@@ -25,7 +25,24 @@ capo scan detailed
 capo scan full
 ```
 
-**3. Web Enumeration**
+**3. Service Enumeration**
+```bash
+# Enumerate all discovered services
+capo enumerate
+
+# Scope to specific services or ports
+capo enumerate -s smb -s http
+capo enumerate -s 445 -s 80
+
+# Authenticated enumeration
+capo enumerate -u admin -p 'P@ssword!'
+
+# Custom wordlist for web fuzzing
+capo enumerate -s http -W medium
+capo enumerate -w /path/to/custom.txt
+```
+
+**4. Web Enumeration**
 ```bash
 # Fuzz directories (auto-uses target IP)
 capo web fuzz
@@ -43,7 +60,7 @@ capo web subdns --domain example.com
 capo web recursive --depth 2
 ```
 
-**4. Password Brute Force (Hydra)**
+**5. Password Brute Force (Hydra)**
 ```bash
 # SSH single credential check
 capo brute ssh -u root -p toor
@@ -55,7 +72,7 @@ capo brute ssh -U users.txt -P passwords.txt
 capo brute http-post --form '/login.php:username=^USER^&password=^PASS^:F=Invalid' -U users.txt -P passwords.txt
 ```
 
-**5. Check Progress**
+**6. Check Progress**
 ```bash
 # See what ports/creds/users have been found
 capo state show
@@ -150,6 +167,58 @@ capo scan os                           # OS fingerprinting
 capo scan scripts smb-vuln-ms17-010    # Run specific NSE scripts
 capo scan custom --args "-p 80 -sC --script http-enum"   # Any nmap flags
 ```
+
+## Service Enumeration (`capo enumerate`)
+
+Automated service enumeration — runs tools per discovered service, parses output, and updates state with users, shares, directories, and technologies. Reads open ports from state and matches them to service-specific command sets defined in `registry.yaml`.
+
+| Flag | Description |
+| :--- | :--- |
+| `-s` / `--services` | Scope to specific services or ports (e.g., `-s smb -s http -s 445`). Omit for all. |
+| `-u` / `--user` | Username for authenticated enumeration commands. |
+| `-p` / `--pass` | Password for authenticated enumeration commands. |
+| `-w` / `--wordlist` | Custom wordlist path for web directory fuzzing (ffuf). |
+| `-W` / `--wordlist-size` | Wordlist size preset: `small` (default), `medium`, `large`. |
+
+**Covered services:** FTP, SSH, SMTP, DNS, HTTP/HTTPS, SMB, RPC, MSRPC, LDAP, Kerberos, SNMP, NFS, MSSQL, MySQL, RDP, WinRM, Redis.
+
+```bash
+# Enumerate all services with open ports
+capo enumerate
+
+# Scope to specific services
+capo enumerate -s smb
+capo enumerate -s smb -s http -s ldap
+
+# Scope by port number
+capo enumerate -s 445 -s 80 -s 389
+
+# Authenticated enumeration (unlocks extra commands)
+capo enumerate -u svc_sql -p 'P@ssword!'
+
+# Web fuzzing with medium wordlist
+capo enumerate -s http -W medium
+
+# Web fuzzing with custom wordlist
+capo enumerate -w /opt/wordlists/custom.txt
+
+# Combine: authenticated + specific service
+capo enumerate -s smb -u admin -p admin
+```
+
+**What it does per service (examples):**
+
+| Service | Tools Run | Key Findings |
+| :--- | :--- | :--- |
+| SMB (445) | nxc shares/RID brute, smbclient, smbmap, enum4linux-ng | Users, shares, password policy |
+| HTTP (80) | whatweb, curl headers, robots.txt, ffuf dir fuzz, nikto | Technologies, directories, headers |
+| LDAP (389) | ldapsearch, nxc ldap | Naming contexts, domain users |
+| Kerberos (88) | GetNPUsers (AS-REP), GetUserSPNs, BloodHound, certipy | Roastable hashes, ADCS vulns |
+| SNMP (161) | onesixtyone, snmpwalk | Community strings, system info |
+| FTP (21) | nmap NSE (anon, bounce, backdoor) | Anonymous access, vulnerabilities |
+| DNS (53) | dig axfr, dig any | Zone transfer data |
+
+---
 
 ## Web Enumeration (`capo web`)
 

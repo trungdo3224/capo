@@ -88,9 +88,9 @@ services:
         auth: false
         timeout: 10
 
-      - name: "Directory fuzz (small)"
+      - name: "Directory fuzz"
         tool: ffuf
-        cmd: "ffuf -u http://{IP}:{PORT}/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_dirs.json -of json"
+        cmd: "ffuf -u http://{IP}:{PORT}/FUZZ -w {WORDLIST} -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_dirs.json -of json"
         auth: false
         timeout: 300
         parser: ffuf_json
@@ -130,9 +130,9 @@ services:
         auth: false
         timeout: 10
 
-      - name: "Directory fuzz HTTPS (small)"
+      - name: "Directory fuzz (HTTPS)"
         tool: ffuf
-        cmd: "ffuf -u https://{IP}:{PORT}/FUZZ -w /usr/share/seclists/Discovery/Web-Content/raft-small-words.txt -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_https_dirs.json -of json"
+        cmd: "ffuf -u https://{IP}:{PORT}/FUZZ -w {WORDLIST} -ac -mc 200,204,301,302,307,401,403 -o {OUTPUT_DIR}/ffuf_https_dirs.json -of json"
         auth: false
         timeout: 300
         parser: ffuf_json

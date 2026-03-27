@@ -10,24 +10,34 @@ enumerate_app = typer.Typer(help="Run service enumeration against open ports")
 @enumerate_app.callback(invoke_without_command=True)
 def enumerate_run(
     ctx: typer.Context,
-    services: Optional[list[str]] = typer.Argument(
-        None,
-        help="Service names or port numbers to scope (e.g. smb http 445). Omit for all.",
+    services: Optional[list[str]] = typer.Option(
+        None, "-s", "--services",
+        help="Service names or port numbers to scope (e.g. -s smb -s http -s 445). Omit for all.",
     ),
     username: str = typer.Option("", "-u", "--user", help="Username for authenticated enum"),
     password: str = typer.Option("", "-p", "--pass", help="Password for authenticated enum"),
+    wordlist: str = typer.Option("", "-w", "--wordlist", help="Custom wordlist path for web fuzzing"),
+    wordlist_size: str = typer.Option(
+        "small", "-W", "--wordlist-size",
+        help="Wordlist size for web fuzzing: small, medium, large",
+    ),
 ):
     """Enumerate discovered services — runs tools, parses output, updates state.
 
     Examples:
-        capo enumerate              # all services with open ports
-        capo enumerate smb          # just SMB
-        capo enumerate smb http     # SMB + HTTP
-        capo enumerate 445 80       # by port number
-        capo enumerate -u admin -p pass  # authenticated enum
+        capo enumerate                    # all services with open ports
+        capo enumerate -s smb             # just SMB
+        capo enumerate -s smb -s http     # SMB + HTTP
+        capo enumerate -s 445 -s 80       # by port number
+        capo enumerate -u admin -p pass   # authenticated enum
+        capo enumerate -s http -W medium  # medium wordlist for dir fuzz
+        capo enumerate -w /path/to/custom.txt  # custom wordlist
     """
     if ctx.invoked_subcommand is not None:
         return
 
     from capo.modules.enumerate import enumerate_engine
-    enumerate_engine.run(services=services, username=username, password=password)
+    enumerate_engine.run(
+        services=services, username=username, password=password,
+        wordlist=wordlist, wordlist_size=wordlist_size,
+    )
