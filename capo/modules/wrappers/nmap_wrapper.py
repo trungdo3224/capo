@@ -1,12 +1,18 @@
 """Nmap wrapper with XML parsing and state integration."""
 
+import re
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from capo.modules.wrappers.base import BaseWrapper
 from capo.state import state_manager
-from capo.utils.display import print_ports_table, print_success, print_warning
+from capo.utils.display import (
+    print_info,
+    print_ports_table,
+    print_success,
+    print_warning,
+)
 
 
 class NmapWrapper(BaseWrapper):
@@ -128,7 +134,11 @@ class NmapWrapper(BaseWrapper):
         self._parse_xml(xml_file)
 
     def _parse_xml(self, xml_path: Path):
-        """Parse Nmap XML and update state."""
+        """Parse Nmap XML and update state.
+
+        Extracts ports, services, versions, CPE, NSE script output,
+        and auto-enriches state from well-known scripts.
+        """
         try:
             tree = ET.parse(xml_path)  # noqa: S314
         except ET.ParseError:
@@ -137,6 +147,8 @@ class NmapWrapper(BaseWrapper):
 
         root = tree.getroot()
         port_count = 0
+        nse_count = 0
+        vuln_count = 0
 
         for host in root.findall(".//host"):
             # Extract OS info
@@ -169,12 +181,18 @@ class NmapWrapper(BaseWrapper):
                 service_el = port_el.find("service")
                 service_name = ""
                 version = ""
+                cpe_list = []
                 if service_el is not None:
                     service_name = service_el.get("name", "")
                     product = service_el.get("product", "")
                     ver = service_el.get("version", "")
                     extra = service_el.get("extrainfo", "")
                     version = " ".join(filter(None, [product, ver, extra]))
+
+                    # Extract CPE identifiers
+                    for cpe_el in service_el.findall("cpe"):
+                        if cpe_el.text:
+                            cpe_list.append(cpe_el.text)
 
                 # Preserve better service name when -sV returns "tcpwrapped"
                 existing_ports = state_manager.get("ports", [])
@@ -191,10 +209,221 @@ class NmapWrapper(BaseWrapper):
                 state_manager.add_port(portid, protocol, service_name, version, port_state)
                 port_count += 1
 
+                # Store CPE in banners
+                if cpe_list:
+                    state_manager.update_banner(portid, protocol, cpe=cpe_list)
+
+                # Extract per-port NSE scripts
+                for script_el in port_el.findall("script"):
+                    script_id = script_el.get("id", "")
+                    script_output = script_el.get("output", "")
+                    if script_id:
+                        state_manager.add_nse_result(portid, script_id, script_output, protocol)
+                        nse_count += 1
+                        # Auto-enrich from well-known scripts
+                        vuln_count += self._enrich_from_nse(
+                            portid, protocol, script_id, script_output, script_el,
+                        )
+
+            # Extract host-level NSE scripts (<hostscript>)
+            for hostscript in host.findall(".//hostscript/script"):
+                script_id = hostscript.get("id", "")
+                script_output = hostscript.get("output", "")
+                if script_id:
+                    state_manager.add_nse_result(0, script_id, script_output)
+                    nse_count += 1
+                    vuln_count += self._enrich_from_nse(
+                        0, "tcp", script_id, script_output, hostscript,
+                    )
+
         print_success(f"Parsed {port_count} open port(s) from Nmap XML.")
+        if nse_count:
+            print_info(f"Extracted {nse_count} NSE script result(s).")
+        if vuln_count:
+            print_warning(
+                f"Discovered {vuln_count} vulnerability(s) from NSE scripts."
+            )
         ports = state_manager.get("ports", [])
         if ports:
             print_ports_table(ports)
+
+    # ------------------------------------------------------------------
+    # Auto-enrichment from well-known NSE scripts
+    # ------------------------------------------------------------------
+
+    def _enrich_from_nse(self, port: int, protocol: str, script_id: str,
+                         output: str, script_el: ET.Element) -> int:
+        """Interpret well-known NSE scripts and enrich state.
+
+        Returns the number of vulnerabilities added.
+        """
+        vuln_count = 0
+
+        # --- smb-vuln-* / vuln-* scripts ---
+        if script_id.startswith(("smb-vuln-", "vuln-")):
+            vuln_count += self._parse_vuln_script(port, script_id, output)
+
+        # --- http-title ---
+        elif script_id == "http-title":
+            title = output.strip()
+            if title:
+                state_manager.update_banner(port, protocol, http_title=title)
+
+        # --- http-server-header ---
+        elif script_id == "http-server-header":
+            header = output.strip()
+            if header:
+                state_manager.update_banner(port, protocol, server_header=header)
+
+        # --- ssl-cert: extract CN and SANs for vhost/domain auto-discovery ---
+        elif script_id == "ssl-cert":
+            self._enrich_ssl_cert(output, script_el)
+
+        # --- ldap-rootdse: extract domain from namingContexts ---
+        elif script_id == "ldap-rootdse":
+            self._enrich_ldap_rootdse(output)
+
+        # --- smb-os-discovery: OS, domain, hostname ---
+        elif script_id == "smb-os-discovery":
+            self._enrich_smb_os_discovery(output)
+
+        # --- smb2-security-mode: signing info ---
+        elif script_id == "smb2-security-mode":
+            state_manager.update_banner(port, protocol, smb_signing=output.strip())
+
+        # --- ftp-anon: anonymous FTP ---
+        elif script_id == "ftp-anon":
+            if "Anonymous FTP login allowed" in output:
+                state_manager.update_banner(port, protocol, ftp_anon=True)
+
+        # --- ssh-hostkey / ssh2-enum-algos: store banner ---
+        elif script_id in ("ssh-hostkey", "ssh2-enum-algos"):
+            key = script_id.replace("-", "_")
+            state_manager.update_banner(port, protocol, **{key: output.strip()})
+
+        return vuln_count
+
+    def _parse_vuln_script(self, port: int, script_id: str, output: str) -> int:
+        """Parse smb-vuln-* and vuln-* script output for confirmed vulnerabilities."""
+        vuln_count = 0
+        # Nmap vuln scripts report "State: VULNERABLE" for confirmed findings
+        if "VULNERABLE" not in output.upper():
+            return 0
+
+        # Extract CVE IDs if present
+        cve_pattern = re.compile(r"(CVE-\d{4}-\d+)", re.IGNORECASE)
+        refs = cve_pattern.findall(output)
+
+        # Extract title from output (typically first non-empty line)
+        lines = [ln.strip() for ln in output.strip().splitlines() if ln.strip()]
+        title = lines[0] if lines else script_id
+
+        # Determine state
+        vuln_state = "VULNERABLE"
+        if "LIKELY VULNERABLE" in output.upper():
+            vuln_state = "LIKELY VULNERABLE"
+
+        state_manager.add_vulnerability(
+            vuln_id=refs[0] if refs else script_id,
+            title=title,
+            port=port,
+            script=script_id,
+            state=vuln_state,
+            refs=refs,
+        )
+        vuln_count += 1
+        return vuln_count
+
+    def _enrich_ssl_cert(self, output: str, script_el: ET.Element):
+        """Extract CN and SANs from ssl-cert output and add as vhosts/domains."""
+        discovered = set()
+
+        # Try structured <table> elements first (more reliable)
+        for table in script_el.findall(".//table"):
+            key = table.get("key", "")
+            if key == "subject":
+                for elem in table.findall("elem"):
+                    if elem.get("key") == "commonName" and elem.text:
+                        discovered.add(elem.text.strip())
+            elif key == "extensions":
+                for ext_table in table.findall("table"):
+                    if ext_table.get("key") == "":
+                        name_el = ext_table.find("elem[@key='name']")
+                        val_el = ext_table.find("elem[@key='value']")
+                        if name_el is not None and val_el is not None:
+                            if "Subject Alternative Name" in (name_el.text or ""):
+                                for name in re.findall(r"DNS:([^\s,]+)", val_el.text or ""):
+                                    discovered.add(name)
+
+        # Fallback: parse text output
+        if not discovered:
+            cn_match = re.search(r"commonName=([^\s/,]+)", output)
+            if cn_match:
+                discovered.add(cn_match.group(1))
+            for san in re.findall(r"DNS:([^\s,]+)", output):
+                discovered.add(san)
+
+        for name in discovered:
+            # Skip wildcard and IP-like entries
+            if name.startswith("*") or re.match(r"^\d+\.\d+\.\d+\.\d+$", name):
+                continue
+            state_manager.add_vhost(name)
+            # If it looks like a domain (has dots, not just hostname)
+            if "." in name:
+                state_manager.add_domain(name)
+
+        if discovered:
+            names = ", ".join(sorted(discovered))
+            print_info(f"SSL cert: discovered {len(discovered)} name(s): {names}")
+
+    def _enrich_ldap_rootdse(self, output: str):
+        """Extract domain from ldap-rootdse namingContexts."""
+        # Look for DC=xxx,DC=yyy pattern
+        dc_match = re.search(r"(DC=[^,\s]+(?:,DC=[^,\s]+)+)", output, re.IGNORECASE)
+        if dc_match:
+            dc_parts = re.findall(r"DC=([^,\s]+)", dc_match.group(1), re.IGNORECASE)
+            if dc_parts:
+                domain = ".".join(dc_parts)
+                state_manager.add_domain(domain)
+                print_info(f"LDAP rootDSE: auto-discovered domain '{domain}'")
+
+                # Update domain_info
+                di = state_manager.get("domain_info", {})
+                if not di.get("domain_name"):
+                    di["domain_name"] = domain
+                    state_manager.set("domain_info", di)
+
+    def _enrich_smb_os_discovery(self, output: str):
+        """Extract OS, domain, hostname from smb-os-discovery."""
+        # Normalize literal \n to actual newlines for consistent parsing
+        text = output.replace("\\n", "\n")
+
+        # OS: Windows Server 2016 Standard 14393
+        os_match = re.search(r"OS:\s*(.+)", text)
+        if os_match:
+            os_name = os_match.group(1).strip()
+            if os_name:
+                state_manager.set("os", os_name)
+
+        # Computer name: FOREST
+        comp_match = re.search(r"Computer name:\s*(\S+)", text)
+        if comp_match:
+            state_manager.set("hostname", comp_match.group(1).strip())
+
+        # Domain name: htb.local
+        domain_match = re.search(r"Domain name:\s*(\S+)", text)
+        if domain_match:
+            domain = domain_match.group(1).strip()
+            if domain and domain.lower() != "workgroup":
+                state_manager.add_domain(domain)
+                print_info(f"SMB discovery: auto-discovered domain '{domain}'")
+
+        # FQDN: FOREST.htb.local
+        fqdn_match = re.search(r"FQDN:\s*(\S+)", text)
+        if fqdn_match:
+            fqdn = fqdn_match.group(1).strip()
+            if fqdn and "." in fqdn:
+                state_manager.add_vhost(fqdn)
 
     def custom_scan(self, extra_args: str, target: str | None = None):
         """Run a custom nmap scan with user-supplied flags. XML output is still parsed into state."""

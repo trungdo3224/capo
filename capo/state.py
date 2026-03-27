@@ -23,7 +23,7 @@ from capo.errors import TargetError
 
 # Schema version for state.json — bump when adding/changing fields.
 # Migration logic in StateManager._migrate_state() handles upgrades.
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # Matches IPv4 addresses or hostnames (alphanumeric + dots/hyphens)
 _TARGET_RE = re.compile(
@@ -209,6 +209,9 @@ class StateManager:
                 "local_txt": "",
                 "proof_txt": "",
             },
+            "nse_results": [],
+            "vulnerabilities": [],
+            "banners": {},
             "scan_history": [],
             "methodology_progress": {},
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -236,6 +239,13 @@ class StateManager:
                 domains.insert(0, old_domain)
             self._state["domains"] = domains
             self._state["schema_version"] = 3
+
+        # v3 → v4: add nse_results, vulnerabilities, banners
+        if version < 4:
+            self._state.setdefault("nse_results", [])
+            self._state.setdefault("vulnerabilities", [])
+            self._state.setdefault("banners", {})
+            self._state["schema_version"] = 4
 
         # Direct write during migration — bypass _save_state() merge
         # to avoid re-introducing removed keys (e.g. "domain") from disk.
@@ -293,7 +303,30 @@ class StateManager:
                         if (h.get("hash"), h.get("username")) not in disk_keys:
                             merged_list.append(h)
                     merged[key] = merged_list
-                    
+
+                elif key == "nse_results" and all(isinstance(x, dict) for x in mem_val + disk_val):
+                    disk_keys = {(r.get("port"), r.get("script_id"), r.get("protocol")) for r in disk_val}
+                    merged_list = list(disk_val)
+                    for r in mem_val:
+                        rkey = (r.get("port"), r.get("script_id"), r.get("protocol"))
+                        if rkey not in disk_keys:
+                            merged_list.append(r)
+                        else:
+                            # Update output for existing entries
+                            for d in merged_list:
+                                if (d.get("port"), d.get("script_id"), d.get("protocol")) == rkey:
+                                    d["output"] = r["output"]
+                                    break
+                    merged[key] = merged_list
+
+                elif key == "vulnerabilities" and all(isinstance(x, dict) for x in mem_val + disk_val):
+                    disk_keys = {(v.get("id"), v.get("port")) for v in disk_val}
+                    merged_list = list(disk_val)
+                    for v in mem_val:
+                        if (v.get("id"), v.get("port")) not in disk_keys:
+                            merged_list.append(v)
+                    merged[key] = merged_list
+
                 else:
                     # Deduplicated union preserving order for generic lists
                     seen = list(disk_val)
@@ -535,6 +568,76 @@ class StateManager:
             existing[0].update(entry)
         else:
             self._state["shares"].append(entry)
+        self._save_state()
+
+    def add_nse_result(self, port: int, script_id: str, output: str,
+                       protocol: str = "tcp"):
+        """Add an NSE script result."""
+        self._state.setdefault("nse_results", [])
+        entry = {
+            "port": port,
+            "protocol": protocol,
+            "script_id": script_id,
+            "output": output,
+        }
+        # Deduplicate by port+script_id — update output if already exists
+        existing = next(
+            (r for r in self._state["nse_results"]
+             if r.get("port") == port and r.get("script_id") == script_id
+             and r.get("protocol") == protocol),
+            None,
+        )
+        if existing:
+            existing["output"] = output
+        else:
+            self._state["nse_results"].append(entry)
+        self._save_state()
+
+    def add_vulnerability(self, vuln_id: str, title: str, port: int = 0,
+                          script: str = "", state: str = "VULNERABLE",
+                          refs: list[str] | None = None):
+        """Add a discovered vulnerability."""
+        self._state.setdefault("vulnerabilities", [])
+        entry = {
+            "id": vuln_id,
+            "title": title,
+            "port": port,
+            "script": script,
+            "state": state,
+            "refs": refs or [],
+        }
+        # Deduplicate by vuln_id + port
+        existing = next(
+            (v for v in self._state["vulnerabilities"]
+             if v.get("id") == vuln_id and v.get("port") == port),
+            None,
+        )
+        if existing:
+            existing.update(entry)
+        else:
+            self._state["vulnerabilities"].append(entry)
+        self._save_state()
+
+    def update_banner(self, port: int, protocol: str = "tcp", **fields):
+        """Update banner info for a port.
+
+        Example: update_banner(80, http_title="WordPress Site",
+                               cpe=["cpe:/a:apache:http_server:2.4.49"])
+        """
+        self._state.setdefault("banners", {})
+        key = f"{port}/{protocol}"
+        existing = self._state["banners"].get(key, {})
+        for k, v in fields.items():
+            if isinstance(v, list) and isinstance(existing.get(k), list):
+                # Merge lists (deduplicated)
+                merged = list(existing[k])
+                for item in v:
+                    if item not in merged:
+                        merged.append(item)
+                existing[k] = merged
+            else:
+                existing[k] = v
+        self._state["banners"][key] = existing
         self._save_state()
 
     def add_scan_record(self, tool: str, command: str, output_file: str = "",

