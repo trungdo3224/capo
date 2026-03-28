@@ -682,6 +682,14 @@ class StateManager:
         """Get list of open port numbers."""
         return [p["port"] for p in self._state.get("ports", []) if p.get("state") == "open"]
 
+    def get_open_ports_proto(self):
+        """Get set of (port, protocol) tuples for open ports."""
+        return {
+            (p["port"], p.get("protocol", "tcp"))
+            for p in self._state.get("ports", [])
+            if p.get("state") == "open"
+        }
+
     def get_services_summary(self) -> dict[int, str]:
         """Get port -> service name mapping."""
         result = {}

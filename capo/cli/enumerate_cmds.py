@@ -21,6 +21,14 @@ def enumerate_run(
         "small", "-W", "--wordlist-size",
         help="Wordlist size for web fuzzing: small, medium, large",
     ),
+    community: str = typer.Option(
+        "", "-C", "--community",
+        help="SNMP community string (default: auto-detect via onesixtyone, fallback: public)",
+    ),
+    manual: bool = typer.Option(
+        False, "-m", "--manual",
+        help="Print resolved commands without executing — copy and run yourself.",
+    ),
 ):
     """Enumerate discovered services — runs tools, parses output, updates state.
 
@@ -32,6 +40,9 @@ def enumerate_run(
         capo enumerate -u admin -p pass   # authenticated enum
         capo enumerate -s http -W medium  # medium wordlist for dir fuzz
         capo enumerate -w /path/to/custom.txt  # custom wordlist
+        capo enumerate -s snmp -C internal     # override SNMP community string
+        capo enumerate -m                      # print commands, don't run
+        capo enumerate -s smb -m               # print SMB commands only
     """
     if ctx.invoked_subcommand is not None:
         return
@@ -40,4 +51,5 @@ def enumerate_run(
     enumerate_engine.run(
         services=services, username=username, password=password,
         wordlist=wordlist, wordlist_size=wordlist_size,
+        community=community, manual=manual,
     )

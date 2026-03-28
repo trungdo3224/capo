@@ -357,9 +357,10 @@ class EnumerateEngine:
         """Map requested services/ports to registry entries matched against open ports.
 
         Returns list of (service_name, matched_port, service_config).
+        Matches both TCP and UDP ports using (port, protocol) tuples.
         """
-        open_ports = set(state_manager.get_open_ports())
-        if not open_ports:
+        open_ports_proto = state_manager.get_open_ports_proto()  # {(port, proto), ...}
+        if not open_ports_proto:
             print_warning("No open ports in state. Run a scan first.")
             return []
 
@@ -370,21 +371,26 @@ class EnumerateEngine:
                 # Could be a port number or a service name
                 if t.isdigit():
                     port = int(t)
-                    if port not in open_ports:
-                        print_warning(f"Port {port} not in open ports, skipping")
-                        continue
+                    # Match port across any protocol
+                    matched_any = False
                     for svc_name, svc_cfg in self.registry.items():
-                        if port in svc_cfg.get("ports", []):
+                        proto = svc_cfg.get("protocol", "tcp")
+                        if port in svc_cfg.get("ports", []) and (port, proto) in open_ports_proto:
                             results.append((svc_name, port, svc_cfg))
+                            matched_any = True
                             break
-                    else:
-                        print_warning(f"No registry entry for port {port}")
+                    if not matched_any:
+                        print_warning(f"Port {port} not open or no registry entry")
                 else:
                     svc_cfg = self.registry.get(t)
                     if not svc_cfg:
                         print_warning(f"Unknown service: {t}")
                         continue
-                    matched_ports = open_ports.intersection(svc_cfg.get("ports", []))
+                    proto = svc_cfg.get("protocol", "tcp")
+                    matched_ports = {
+                        p for p in svc_cfg.get("ports", [])
+                        if (p, proto) in open_ports_proto
+                    }
                     if not matched_ports:
                         print_warning(f"Service '{t}' — no matching open ports")
                         continue
@@ -395,7 +401,11 @@ class EnumerateEngine:
             for svc_name, svc_cfg in self.registry.items():
                 if svc_name == "versions":
                     continue  # handled separately
-                matched_ports = open_ports.intersection(svc_cfg.get("ports", []))
+                proto = svc_cfg.get("protocol", "tcp")
+                matched_ports = {
+                    p for p in svc_cfg.get("ports", [])
+                    if (p, proto) in open_ports_proto
+                }
                 for p in sorted(matched_ports):
                     results.append((svc_name, p, svc_cfg))
 
@@ -403,7 +413,7 @@ class EnumerateEngine:
 
     def _inject(self, cmd: str, port: int, output_dir: Path,
                 username: str = "", password: str = "",
-                wordlist: str = "") -> str:
+                wordlist: str = "", community: str = "public") -> str:
         """Replace all {VARIABLE} placeholders in a command string."""
         ip = state_manager.get_var("IP") or ""
         domain = state_manager.get_var("DOMAIN") or ""
@@ -416,6 +426,7 @@ class EnumerateEngine:
             "{PASS}": password,
             "{OUTPUT_DIR}": str(output_dir),
             "{WORDLIST}": wordlist,
+            "{COMMUNITY}": community,
         }
         for k, v in replacements.items():
             cmd = cmd.replace(k, v)
@@ -425,14 +436,14 @@ class EnumerateEngine:
                  output_dir: Path, timeout: int,
                  parser_name: str | None,
                  username: str = "", password: str = "",
-                 wordlist: str = "") -> CmdResult:
+                 wordlist: str = "", community: str = "public") -> CmdResult:
         """Execute a single enumeration command."""
         # Check tool availability
         if not shutil.which(tool):
             return CmdResult(name=name, tool=tool, cmd=cmd_template,
                              status="skipped", findings="not installed")
 
-        cmd_str = self._inject(cmd_template, port, output_dir, username, password, wordlist)
+        cmd_str = self._inject(cmd_template, port, output_dir, username, password, wordlist, community)
         print_command(cmd_str)
 
         # Save output to file
@@ -550,9 +561,55 @@ class EnumerateEngine:
         size = wordlist_size.lower().strip()
         return WORDLIST_PRESETS.get(size, WORDLIST_PRESETS["small"])
 
+    def _extract_community(self, cr: "CmdResult") -> str:
+        """Extract first SNMP community string from an onesixtyone CmdResult.
+
+        Findings summary format: "community: public, private"
+        """
+        if cr.findings.startswith("community: "):
+            first = cr.findings[len("community: "):].split(",")[0].strip()
+            return first
+        return ""
+
+    def _print_manual(self, matched: list, has_creds: bool,
+                      wordlist: str, community: str):
+        """Print all resolved commands grouped by service without executing."""
+        from capo.utils.display import console as _console
+
+        # Dummy output dir placeholder — not a real path, just for display
+        dummy_out = Path("/tmp/capo-output")
+        seen: set[str] = set()
+
+        _console.print("\n[bold cyan][*] Manual mode — copy commands to run yourself[/bold cyan]\n")
+
+        for svc_name, port, svc_cfg in matched:
+            cmds_for_svc = []
+            for entry in svc_cfg.get("commands", []):
+                if entry.get("auth", False) and not has_creds:
+                    continue
+                cmd_key = f"{entry['tool']}:{entry['cmd']}"
+                if cmd_key in seen:
+                    continue
+                seen.add(cmd_key)
+                resolved = self._inject(
+                    entry["cmd"], port, dummy_out,
+                    wordlist=wordlist, community=community,
+                )
+                cmds_for_svc.append((entry["name"], resolved))
+
+            if cmds_for_svc:
+                _console.print(f"[bold white]  {svc_name.upper()} ({port})[/bold white]")
+                for name, cmd in cmds_for_svc:
+                    _console.print(f"  [dim]# {name}[/dim]")
+                    _console.print(f"  {cmd}\n")
+
+        _console.print("[dim]Note: auth commands omitted — re-run with -u/-p to include them.[/dim]\n"
+                       if not has_creds else "")
+
     def run(self, services: list[str] | None = None,
             username: str = "", password: str = "",
-            wordlist: str = "", wordlist_size: str = "small") -> list[ServiceResult]:
+            wordlist: str = "", wordlist_size: str = "small",
+            community: str = "", manual: bool = False) -> list[ServiceResult]:
         """Run enumeration and return structured results.
 
         Args:
@@ -562,12 +619,20 @@ class EnumerateEngine:
             password: Credential for auth-required commands.
             wordlist: Custom wordlist path (overrides wordlist_size).
             wordlist_size: Preset size — small, medium, large.
+            community: SNMP community string override. If empty, auto-detected
+                       from onesixtyone output then falls back to "public".
+            manual: If True, print resolved commands without executing them.
         """
         has_creds = bool(username and password)
         resolved_wordlist = self._resolve_wordlist(wordlist, wordlist_size)
+        resolved_community = community or "public"
         matched = self._resolve_services(services)
 
         if not matched:
+            return []
+
+        if manual:
+            self._print_manual(matched, has_creds, resolved_wordlist, resolved_community)
             return []
 
         # Create output directory
@@ -585,6 +650,10 @@ class EnumerateEngine:
         for svc_name, port, svc_cfg in matched:
             svc_result = ServiceResult(service=svc_name, port=port)
             console.print(f"[bold white]  {svc_name.upper()} ({port}):[/bold white]")
+
+            # Per-service community string — starts from CLI override or "public",
+            # updated if onesixtyone finds a different string mid-run.
+            active_community = resolved_community
 
             for entry in svc_cfg.get("commands", []):
                 # Skip auth commands if no creds provided
@@ -611,7 +680,15 @@ class EnumerateEngine:
                     username=username,
                     password=password,
                     wordlist=resolved_wordlist,
+                    community=active_community,
                 )
+
+                # Auto-detect community string from onesixtyone for subsequent commands
+                if entry.get("parser") == "onesixtyone" and cr.status == "ok":
+                    detected = self._extract_community(cr)
+                    if detected:
+                        active_community = detected
+                        console.print(f"      [dim]→ community string: {detected}[/dim]")
 
                 svc_result.commands.append(cr)
 

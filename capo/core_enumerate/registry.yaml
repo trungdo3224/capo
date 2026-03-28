@@ -3,6 +3,7 @@
 #
 # Fields:
 #   ports:    List of ports that map to this service
+#   protocol: tcp (default) or udp
 #   commands: Ordered list of enumeration commands
 #     - name:    Human-readable label
 #       tool:    Binary name (checked with `which`)
@@ -51,6 +52,7 @@ services:
 
   dns:
     ports: [53]
+    protocol: udp
     commands:
       - name: "DNS zone transfer"
         tool: dig
@@ -281,6 +283,7 @@ services:
 
   snmp:
     ports: [161]
+    protocol: udp
     commands:
       - name: "SNMP community brute"
         tool: onesixtyone
@@ -289,16 +292,16 @@ services:
         timeout: 60
         parser: onesixtyone
 
-      - name: "SNMP walk (public)"
+      - name: "SNMP walk"
         tool: snmpwalk
-        cmd: "snmpwalk -v2c -c public {IP}"
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP}"
         auth: false
         timeout: 120
         parser: snmpwalk
 
       - name: "SNMP system info"
         tool: snmpwalk
-        cmd: "snmpwalk -v2c -c public {IP} 1.3.6.1.2.1.1"
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.2.1.1"
         auth: false
         timeout: 30
 
