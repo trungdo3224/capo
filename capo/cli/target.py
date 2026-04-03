@@ -10,7 +10,6 @@ from capo.utils.display import (
     print_directory_tree,
     print_error,
     print_info,
-    print_state_table,
     print_success,
 )
 
@@ -19,9 +18,9 @@ target_app = typer.Typer(help="Target management commands")
 
 @target_app.command("set")
 def target_set(
-    ip: str = typer.Argument(..., help="Target IP or hostname"),
-    domain: str | None = typer.Option(None, "--domain", "-d", help="Target domain"),
-    campaign: str | None = typer.Option(None, "--campaign", "-c", help="Link to a campaign"),
+    ip: str = typer.Argument(..., help="target IP or hostname"),
+    domain: str | None = typer.Option(None, "--domain", "-d", help="target domain"),
+    campaign: str | None = typer.Option(None, "--campaign", "-c", help="link to a campaign"),
 ):
     """Set the current target and initialize workspace."""
     if campaign:
@@ -46,19 +45,10 @@ def target_set(
     print_directory_tree(workspace)
 
 
-@target_app.command("show")
-def target_show():
-    """Show current target information."""
-    if campaign_manager.active:
-        print_info(f"Active Campaign: {campaign_manager.name}")
-    require_target()
-    print_state_table(state_manager.state, mgr=state_manager)
-
-
 @target_app.command("campaign")
 def target_campaign(
-    name: str = typer.Argument(None, help="Campaign name"),
-    clear: bool = typer.Option(False, "--clear", help="Exit the current campaign"),
+    name: str = typer.Argument(None, help="campaign name"),
+    clear: bool = typer.Option(False, "--clear", help="exit the current campaign"),
 ):
     """Set, show, or clear the active campaign."""
     if clear:
@@ -82,14 +72,23 @@ def target_campaign(
 
 @target_app.command("set-domain")
 def target_set_domain(
-    domain: str = typer.Argument(..., help="Domain name"),
+    domain: str = typer.Argument(..., help="domain name"),
     dc_ip: str | None = typer.Option(None, "--dc-ip", help="Domain Controller IP"),
 ):
-    """Set domain information for AD engagements."""
+    """Add/set domain information for AD engagements.
+
+    Can be called multiple times to add additional domains.
+    Use --dc-ip to set Domain Controller IP alongside the domain.
+
+    Examples:
+        capo target set-domain flight.htb
+        capo target set-domain flight.htb --dc-ip 10.129.2.5
+        capo target set-domain dc.flight.htb          # add second domain
+    """
     if not state_manager.target and not campaign_manager.active:
         print_error("No target or campaign set.")
         raise typer.Exit(1)
-        
+
     if campaign_manager.active:
         campaign_manager.update_domain_info(domain_name=domain, dc_ip=dc_ip)
     else:
@@ -98,14 +97,17 @@ def target_set_domain(
             info = state_manager.get("domain_info", {})
             info["dc_ip"] = dc_ip
             state_manager.set("domain_info", info)
-        
+
     print_success(f"Domain set: {domain}")
+    domains = state_manager.get("domains", [])
+    if len(domains) > 1:
+        print_info(f"All domains: {', '.join(domains)}")
 
 
 @target_app.command("set-lhost")
 def target_set_lhost(
-    lhost: str = typer.Argument(..., help="Your attack machine IP"),
-    lport: int = typer.Option(443, "--lport", "-p", help="Listener port"),
+    lhost: str = typer.Argument(..., help="your attack machine IP"),
+    lport: int = typer.Option(443, "--lport", "-p", help="listener port"),
 ):
     """Set your local host IP for reverse shells and pivoting."""
     require_target()
@@ -114,22 +116,9 @@ def target_set_lhost(
     print_success(f"LHOST={lhost}, LPORT={lport}")
 
 
-@target_app.command("add-domain")
-def target_add_domain(
-    domain: str = typer.Argument(..., help="Domain name to add"),
-):
-    """Add an associated domain name to the target."""
-    require_target()
-    state_manager.add_domain(domain)
-    print_success(f"Added domain: {domain}")
-    domains = state_manager.get("domains", [])
-    if len(domains) > 1:
-        print_info(f"All domains: {', '.join(domains)}")
-
-
 @target_app.command("add-user")
 def target_add_user(
-    username: str = typer.Argument(..., help="Username to add"),
+    username: str = typer.Argument(..., help="username to add"),
 ):
     """Manually add a discovered username."""
     require_target()
@@ -139,9 +128,9 @@ def target_add_user(
 
 @target_app.command("add-cred")
 def target_add_cred(
-    username: str = typer.Argument(..., help="Username"),
-    password: str = typer.Argument(..., help="Password"),
-    service: str = typer.Option("", "--service", "-s", help="Service name"),
+    username: str = typer.Argument(..., help="username"),
+    password: str = typer.Argument(..., help="password"),
+    service: str = typer.Option("", "--service", "-s", help="service name"),
 ):
     """Add discovered credentials."""
     require_target()
@@ -151,8 +140,8 @@ def target_add_cred(
 
 @target_app.command("add-hash")
 def target_add_hash(
-    hash_value: str = typer.Argument(..., help="Hash value"),
-    username: str = typer.Option("", "--user", "-u", help="Associated username"),
+    hash_value: str = typer.Argument(..., help="hash value"),
+    username: str = typer.Option("", "--user", "-u", help="associated username"),
 ):
     """Add a discovered hash."""
     require_target()
@@ -162,7 +151,7 @@ def target_add_hash(
 
 @target_app.command("add-vhost")
 def target_add_vhost(
-    vhost: str = typer.Argument(..., help="Domain or subdomain to add"),
+    vhost: str = typer.Argument(..., help="domain or subdomain to add"),
 ):
     """Manually add a discovered vhost/subdomain."""
     require_target()
@@ -172,8 +161,8 @@ def target_add_vhost(
 
 @target_app.command("flag")
 def target_flag(
-    flag_type: str = typer.Argument(..., help="Flag type: local or proof"),
-    value: str = typer.Argument(..., help="Flag value"),
+    flag_type: str = typer.Argument(..., help="flag type: local or proof"),
+    value: str = typer.Argument(..., help="flag value"),
 ):
     """Record a captured flag (local.txt / proof.txt)."""
     require_target()
@@ -184,7 +173,7 @@ def target_flag(
 
 @target_app.command("note")
 def target_note(
-    note: str = typer.Argument(..., help="Note text"),
+    note: str = typer.Argument(..., help="note text"),
 ):
     """Add a quick note to the target."""
     require_target()

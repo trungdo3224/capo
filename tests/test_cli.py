@@ -64,8 +64,8 @@ class TestTargetCommands:
         assert result.exit_code == 0
         assert "10.10.10.100" in result.output
 
-    def test_target_show_no_target(self):
-        result = runner.invoke(_app(), ["target", "show"])
+    def test_state_show_no_target(self):
+        result = runner.invoke(_app(), ["state", "show"])
         assert result.exit_code == 1
 
 

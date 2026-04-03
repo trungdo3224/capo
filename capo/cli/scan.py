@@ -10,9 +10,9 @@ scan_app = typer.Typer(help="Scanning & enumeration wrappers")
 
 @scan_app.command("quick")
 def scan_quick(
-    target: str | None = typer.Argument(None, help="Target IP (uses current if not set)"),
-    profile: str = typer.Option("normal", "--profile", "-p", help="Scan profile: aggressive/normal/stealth"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", "-p", help="scan profile: aggressive/normal/stealth"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Quick all-ports TCP scan with Nmap."""
     ensure_target(target)
@@ -26,10 +26,10 @@ def scan_quick(
 
 @scan_app.command("detailed")
 def scan_detailed(
-    ports: str | None = typer.Option(None, "--ports", "-p", help="Ports to scan (comma-separated)"),
-    target: str | None = typer.Argument(None, help="Target IP"),
-    profile: str = typer.Option("normal", "--profile", help="Scan profile"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    ports: str | None = typer.Option(None, "--ports", "-p", help="ports to scan (comma-separated)"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", help="scan profile: aggressive/normal/stealth"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Detailed version/script scan on discovered ports."""
     ensure_target(target)
@@ -43,9 +43,9 @@ def scan_detailed(
 
 @scan_app.command("udp")
 def scan_udp(
-    target: str | None = typer.Argument(None, help="Target IP"),
-    profile: str = typer.Option("normal", "--profile", help="Scan profile"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", help="scan profile: aggressive/normal/stealth"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """UDP top-ports scan."""
     ensure_target(target)
@@ -56,9 +56,9 @@ def scan_udp(
 
 @scan_app.command("vuln")
 def scan_vuln(
-    ports: str | None = typer.Option(None, "--ports", "-p", help="Ports to scan"),
-    target: str | None = typer.Argument(None, help="Target IP"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    ports: str | None = typer.Option(None, "--ports", "-p", help="ports to scan (comma-separated)"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Run Nmap vuln scripts (OSCP-safe NSE scripts)."""
     ensure_target(target)
@@ -69,9 +69,9 @@ def scan_vuln(
 
 @scan_app.command("custom")
 def scan_custom(
-    target: str | None = typer.Argument(None, help="Target IP (uses current if not set)"),
-    nmap_args: str = typer.Option(..., "--args", "-a", help="Custom nmap flags, e.g. '-p 80,443 -sC -sV'"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    nmap_args: str = typer.Option(..., "--args", "-a", help="custom nmap flags, e.g. '-p 80,443 -sC -sV'"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Custom nmap scan — pass any nmap flags while results still parse into state."""
     ensure_target(target)
@@ -85,12 +85,12 @@ def scan_custom(
 
 @scan_app.command("ports")
 def scan_ports(
-    ports: str = typer.Argument(..., help="Port list to scan, e.g. '80,443,8080-8090'"),
-    target: str | None = typer.Option(None, "--target", "-t", help="Target IP (uses current if not set)"),
-    profile: str = typer.Option("normal", "--profile", help="Scan profile: aggressive/normal/stealth"),
-    no_scripts: bool = typer.Option(False, "--no-scripts", help="Skip default NSE scripts (-sC)"),
-    no_versions: bool = typer.Option(False, "--no-versions", help="Skip version detection (-sV)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    ports: str = typer.Argument(..., help="port list, e.g. '80,443,8080-8090'"),
+    target: str | None = typer.Option(None, "--target", "-t", help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", help="scan profile: aggressive/normal/stealth"),
+    no_scripts: bool = typer.Option(False, "--no-scripts", help="skip default NSE scripts (-sC)"),
+    no_versions: bool = typer.Option(False, "--no-versions", help="skip version detection (-sV)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Scan a specific port list with version/script detection — no prior quick scan required."""
     ensure_target(target)
@@ -104,9 +104,9 @@ def scan_ports(
 
 @scan_app.command("os")
 def scan_os(
-    target: str | None = typer.Argument(None, help="Target IP (uses current if not set)"),
-    profile: str = typer.Option("normal", "--profile", help="Scan profile"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", help="scan profile: aggressive/normal/stealth"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """OS detection scan (-O --osscan-guess). Best run as root."""
     ensure_target(target)
@@ -118,9 +118,9 @@ def scan_os(
 @scan_app.command("scripts")
 def scan_scripts(
     scripts: str = typer.Argument(..., help="NSE scripts, e.g. 'smb-vuln-ms17-010,http-title'"),
-    ports: str | None = typer.Option(None, "--ports", "-p", help="Ports (uses discovered open ports if not set)"),
-    target: str | None = typer.Option(None, "--target", "-t", help="Target IP (uses current if not set)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    ports: str | None = typer.Option(None, "--ports", "-p", help="ports (uses discovered if omitted)"),
+    target: str | None = typer.Option(None, "--target", "-t", help="target IP (current if omitted)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Run specific NSE scripts against discovered or specified ports."""
     ensure_target(target)
@@ -131,9 +131,9 @@ def scan_scripts(
 
 @scan_app.command("full")
 def scan_full(
-    target: str | None = typer.Argument(None, help="Target IP"),
-    profile: str = typer.Option("normal", "--profile", help="Scan profile"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Print command without executing"),
+    target: str | None = typer.Argument(None, help="target IP (current if omitted)"),
+    profile: str = typer.Option("normal", "--profile", help="scan profile: aggressive/normal/stealth"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print command without executing"),
 ):
     """Run full recon pipeline: quick -> detailed -> triggers."""
     ensure_target(target)

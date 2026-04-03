@@ -1,10 +1,10 @@
 """Methodology workflow CLI commands."""
 
-import click
 import typer
 
 from capo.cli.helpers import print_json_data, require_target
 from capo.utils.display import console, print_error, print_info, print_success, print_suggestion
+from capo.utils.typer_helpers import fallback_group
 
 
 def _get_methodology(name: str):
@@ -43,26 +43,15 @@ def _run_methodology(args: list[str]):
         _show_methodology_steps(meth, engine)
 
 
-class _MethodologyGroup(typer.core.TyperGroup):
-    """Routes unknown subcommands to _run_methodology (e.g. 'capo methodology web-app')."""
-
-    def resolve_command(self, ctx, args):
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError:
-            _run_methodology(list(args))
-            raise typer.Exit()
-
-
 methodology_app = typer.Typer(
     help="Attack methodology workflows",
-    cls=_MethodologyGroup,
+    cls=fallback_group(_run_methodology),
 )
 
 
 @methodology_app.command("list")
 def methodology_list(
-    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    json_output: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """List available methodology workflows."""
     from capo.modules.methodology import methodology_engine
@@ -98,8 +87,8 @@ def methodology_list(
 
 @methodology_app.command("status")
 def methodology_status(
-    name: str = typer.Argument(help="Methodology name"),
-    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
+    name: str = typer.Argument(help="methodology name"),
+    json_output: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """Show progress of a methodology workflow."""
     require_target()
@@ -146,8 +135,8 @@ def methodology_status(
 
 @methodology_app.command("next")
 def methodology_next(
-    name: str = typer.Argument(help="Methodology name"),
-    limit: int = typer.Option(3, "--limit", "-n", help="Number of steps to show"),
+    name: str = typer.Argument(help="methodology name"),
+    limit: int = typer.Option(3, "--limit", "-n", help="number of steps to show"),
 ):
     """Show next steps in a methodology with commands."""
     require_target()
@@ -163,8 +152,8 @@ def methodology_next(
 
 @methodology_app.command("done")
 def methodology_done(
-    name: str = typer.Argument(help="Methodology name"),
-    step: str = typer.Argument(help="Step ID to mark complete"),
+    name: str = typer.Argument(help="methodology name"),
+    step: str = typer.Argument(help="step ID to mark complete"),
 ):
     """Mark a methodology step as completed."""
     require_target()

@@ -20,7 +20,7 @@ state_app = typer.Typer(help="State inspection & management")
 
 @state_app.command("show")
 def state_show(
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """Show full target state."""
     require_target()
@@ -32,7 +32,7 @@ def state_show(
 
 @state_app.command("ports")
 def state_ports(
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """Show discovered ports and services."""
     require_target()
@@ -47,7 +47,7 @@ def state_ports(
 
 @state_app.command("users")
 def state_users(
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """Show discovered users."""
     require_target()
@@ -63,7 +63,7 @@ def state_users(
 
 @state_app.command("creds")
 def state_creds(
-    as_json: bool = typer.Option(False, "--json", help="Output as JSON"),
+    as_json: bool = typer.Option(False, "--json", help="output as JSON"),
 ):
     """Show discovered credentials."""
     require_target()
@@ -95,7 +95,7 @@ def state_dirs():
 
 @state_app.command("export")
 def state_export(
-    fmt: str = typer.Option("json", "--format", "-f", help="Export format: json, csv, markdown"),
+    fmt: str = typer.Option("json", "--format", "-f", help="export format: json, csv, markdown"),
     section: str = typer.Option("all", "--section", "-s", help="CSV section: ports, users, credentials, hashes, shares"),
 ):
     """Export state data in various formats."""
@@ -147,8 +147,8 @@ def state_workspace():
 
 @state_app.command("refresh")
 def state_refresh(
-    notes_only: bool = typer.Option(False, "--notes", "-n", help="Only regenerate notes.md"),
-    files_only: bool = typer.Option(False, "--files", "-f", help="Only regenerate loot files"),
+    notes_only: bool = typer.Option(False, "--notes", "-n", help="only regenerate notes.md"),
+    files_only: bool = typer.Option(False, "--files", "-f", help="only regenerate loot files"),
 ):
     """Regenerate loot files and notes.md from current state.
 

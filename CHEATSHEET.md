@@ -133,11 +133,9 @@ capo session list                                   # overview all sessions
 | Command | Description | Example |
 | :--- | :--- | :--- |
 | `set` | Set target IP & init workspace | `capo target set 10.129.2.5` |
-| `show` | Show current target info | `capo target show` |
 | `campaign` | Set Active Campaign context | `capo target campaign my-lab` |
-| `set-domain` | Set AD domain context | `capo target set-domain flight.htb` |
+| `set-domain` | Set/add AD domain context | `capo target set-domain flight.htb` |
 | `set-lhost` | Set your IP/Port for reverse shells | `capo target set-lhost 10.10.14.5 -p 443` |
-| `add-domain` | Add an associated domain name | `capo target add-domain dc.flight.htb` |
 | `add-vhost` | Manually add a sub/vhost to scope | `capo target add-vhost admin.flight.htb` |
 | `note` | Add a text note to the target | `capo target note "Potential BOF on port 88"` |
 | `flag` | Save a captured flag | `capo target flag local af7b...` |

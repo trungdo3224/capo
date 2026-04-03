@@ -12,9 +12,9 @@ report_app = typer.Typer(help="Report generation & export")
 @report_app.callback(invoke_without_command=True)
 def report_generate(
     ctx: typer.Context,
-    fmt: str = typer.Option("markdown", "--format", "-f", help="Output format: markdown or html"),
-    preview: bool = typer.Option(False, "--preview", "-p", help="Preview in terminal instead of writing to file"),
-    timeline: bool = typer.Option(False, "--timeline", "-t", help="Show only the attack timeline"),
+    fmt: str = typer.Option("markdown", "--format", "-f", help="output format: markdown or html"),
+    preview: bool = typer.Option(False, "--preview", "-p", help="preview in terminal instead of writing to file"),
+    timeline: bool = typer.Option(False, "--timeline", "-t", help="show only the attack timeline"),
 ):
     """Generate a full pentest report from current state.
 

@@ -9,22 +9,22 @@ kerberos_app = typer.Typer(help="Kerberos attacks & lateral movement (Impacket)"
 # ── Common option factories ───────────────────────────────────────────────────
 
 def _target_arg():
-    return typer.Argument(None, help="Target IP (uses current if not set)")
+    return typer.Argument(None, help="target IP (current if omitted)")
 
 def _user_opt(required=False):
-    return typer.Option(... if required else "", "--user", "-u", help="Username")
+    return typer.Option(... if required else "", "--user", "-u", help="username")
 
 def _pass_opt():
-    return typer.Option("", "--password", "-p", help="Password")
+    return typer.Option("", "--password", "-p", help="password")
 
 def _hash_opt():
     return typer.Option("", "--hash", "-H", help="NTLM hash (NT or LM:NT for PTH)")
 
 def _domain_opt():
-    return typer.Option("", "--domain", "-d", help="Domain name (auto-detected from state if omitted)")
+    return typer.Option("", "--domain", "-d", help="domain (auto-detected from state if omitted)")
 
 def _dry_run_opt():
-    return typer.Option(False, "--dry-run", help="Print command without executing")
+    return typer.Option(False, "--dry-run", help="print command without executing")
 
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -33,8 +33,8 @@ def _dry_run_opt():
 def asrep_roast(
     target:   str | None = _target_arg(),
     domain:   str        = _domain_opt(),
-    userfile: str        = typer.Option("", "--userfile", "-f", help="File with usernames to test"),
-    username: str        = typer.Option("", "--user",     "-u", help="Single username to test"),
+    userfile: str        = typer.Option("", "--userfile", "-f", help="file with usernames to test"),
+    username: str        = typer.Option("", "--user",     "-u", help="single username to test"),
     dry_run:  bool       = _dry_run_opt(),
 ):
     """AS-REP roast — request TGTs for accounts without Kerberos pre-auth.
@@ -54,7 +54,7 @@ def kerberoast(
     domain:   str        = _domain_opt(),
     username: str        = _user_opt(required=True),
     password: str        = _pass_opt(),
-    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     dry_run:  bool       = _dry_run_opt(),
 ):
     """Kerberoast — request TGS tickets for accounts with SPNs.
@@ -72,7 +72,7 @@ def secretsdump(
     target:   str | None = _target_arg(),
     username: str        = _user_opt(required=True),
     password: str        = _pass_opt(),
-    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     domain:   str        = _domain_opt(),
     dry_run:  bool       = _dry_run_opt(),
 ):
@@ -91,9 +91,9 @@ def dcsync(
     target:    str | None = _target_arg(),
     username:  str        = _user_opt(required=True),
     password:  str        = _pass_opt(),
-    hash_:     str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:     str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     domain:    str        = _domain_opt(),
-    dump_user: str        = typer.Option("", "--dump-user", help="Dump a single account (default: all)"),
+    dump_user: str        = typer.Option("", "--dump-user", help="dump a single account (default: all)"),
     dry_run:   bool       = _dry_run_opt(),
 ):
     """DCSync — replicate NTDS hashes using domain replication rights.
@@ -113,7 +113,7 @@ def psexec(
     target:   str | None = _target_arg(),
     username: str        = _user_opt(required=True),
     password: str        = _pass_opt(),
-    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     domain:   str        = _domain_opt(),
 ):
     """Launch a SYSTEM shell via psexec.py (SMB).
@@ -131,7 +131,7 @@ def wmiexec(
     target:   str | None = _target_arg(),
     username: str        = _user_opt(required=True),
     password: str        = _pass_opt(),
-    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     domain:   str        = _domain_opt(),
 ):
     """Launch a semi-interactive shell via wmiexec.py (WMI — stealthier than psexec).
@@ -147,9 +147,9 @@ def wmiexec(
 @kerberos_app.command("smbclient")
 def smbclient(
     target:   str | None = _target_arg(),
-    username: str        = typer.Option("", "--user", "-u", help="Username (blank for null session)"),
+    username: str        = typer.Option("", "--user", "-u", help="username (blank for null session)"),
     password: str        = _pass_opt(),
-    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for PTH"),
+    hash_:    str        = typer.Option("", "--hash", "-H", help="NTLM hash for pass-the-hash"),
     domain:   str        = _domain_opt(),
 ):
     """Open an interactive SMB shell via smbclient.py.

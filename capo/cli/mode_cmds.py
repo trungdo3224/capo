@@ -1,10 +1,10 @@
 """Exam mode management CLI commands."""
 
-import click
 import typer
 
 from capo.cli.helpers import require_target
 from capo.utils.display import console
+from capo.utils.typer_helpers import fallback_group
 
 
 def _set_mode(args: list[str]):
@@ -13,18 +13,10 @@ def _set_mode(args: list[str]):
     mode_manager.set_mode(args[0])
 
 
-class _ModeGroup(typer.core.TyperGroup):
-    """Routes unknown subcommands to _set_mode (e.g. 'capo mode oscp')."""
-
-    def resolve_command(self, ctx, args):
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError:
-            _set_mode(list(args))
-            raise typer.Exit()
-
-
-mode_app = typer.Typer(help="Exam mode management (OSCP/CPTS)", cls=_ModeGroup)
+mode_app = typer.Typer(
+    help="Exam mode management (OSCP/CPTS)",
+    cls=fallback_group(_set_mode),
+)
 
 
 @mode_app.command("show")

@@ -20,9 +20,9 @@ app = typer.Typer(
 @app.callback(invoke_without_command=True)
 def main(
     ctx: typer.Context,
-    version: bool = typer.Option(False, "--version", "-v", help="Show version"),
-    quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress suggestions & banners"),
-    verbose: bool = typer.Option(False, "--verbose", help="Full output (overrides quiet config)"),
+    version: bool = typer.Option(False, "--version", "-v", help="show version"),
+    quiet: bool = typer.Option(False, "--quiet", "-q", help="suppress suggestions & banners"),
+    verbose: bool = typer.Option(False, "--verbose", help="full output (overrides quiet config)"),
 ):
     """C.A.P.O - Context-Aware Pentest Orchestrator."""
     ensure_dirs()

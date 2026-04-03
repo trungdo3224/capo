@@ -81,57 +81,242 @@ canvas { display: block; }
 <script>
 // ── Data ──
 const clusterColors = {
-  "Capo":     "#f0883e",
-  "Cli":      "#58a6ff",
-  "Js":       "#d2a8ff",
+  "State":    "#f0883e",
+  "Campaign": "#ffa657",
+  "Graph":    "#d2a8ff",
   "Modules":  "#3fb950",
-  "Studio":   "#f778ba",
-  "Tests":    "#484f58",
-  "Views":    "#79c0ff",
-  "Wrappers": "#ffa657"
+  "Wrappers": "#f778ba",
+  "Studio":   "#e3b341",
+  "Utils":    "#8b949e",
+  "Cli":      "#58a6ff",
+  "Api":      "#79c0ff",
 };
 
 const clusterMembers = {
-  "Capo": ["CapoError","ScanError","StateError","TargetError","ToolNotFoundError","_build_suggestions","_fresh_state","_inject","_list_files","_load_daemon_rules","_load_state","_load_yaml","_lock_file","_merge_state","_migrate_state","_save_state","_save_yaml","_state_file","_validate_filename","_write_list_file","add_credential","add_hash","add_host","add_note","add_user","banner","ensure_dirs","get_cheatsheet","get_methodology","get_suggestions","list_cheatsheets","list_methodologies","main","save_cheatsheet","save_methodology","set","set_flag","update_domain_info"],
-  "Cli": ["_auth_str","_domain_opt","_dry_run_opt","_find_impacket","_load_current_campaign","_load_directory","_load_file","_output_base","_output_dir","_parse_gobuster_dns","_parse_xml","_pass_opt","_show_methodology_next","_show_methodology_steps","_subdns_gobuster","_target_arg","_user_opt","add_domain","asrep_roast","brute_http_get","brute_http_post","brute_web_form","dcsync","display_cheatsheet_results","exec_shell","export_state","get_by_category","http_get_form","http_post_form","init_custom_triggers","inject_variables","kerberoast","list_categories","load_all","mark_metasploit_used","methodology_auto_check","methodology_done","methodology_next","methodology_start","mode_use_msf","print_command","print_credentials_table","print_directory_tree","print_error","print_info","print_ports_table","print_state_table","print_success","print_warning","psexec","query_service","refresh_notes","report_generate","report_preview","report_timeline","search_cheatsheet","secretsdump","set_campaign","smbclient","start_methodology","state_creds","state_dirs","state_export","state_history","state_ports","state_refresh_notes","state_show","state_sync_files","state_users","state_workspace","target_add_cred","target_add_domain","target_add_hash","target_add_user","target_add_vhost","target_campaign","target_flag","target_note","target_set","target_set_domain","target_set_lhost","target_show","triggers_init","web_form","wmiexec"],
-  "Js": ["_get","_post","fetchCheatsheets","fetchCustomTriggers","fetchEngagement","fetchMethodologies","fetchSuggestions","getCheatsheet","getMethodology","saveCheatsheet","saveCustomTriggers","saveMethodology"],
-  "Modules": ["_check_ad_environment","_check_credential_opportunities","_check_web_findings","_html_escape","_html_inline","_suggest_methodologies","check_triggers","detailed_scan","generate_html","generate_markdown","get_applicable","get_open_ports","get_suggestions","has_service","is_applicable","load_rules","print_suggestion","scan_detailed","suggest","triggers_check"],
-  "Studio": ["_get_files","get_cheatsheet","get_methodology","list_cheatsheets","list_methodologies","read_yaml","save_cheatsheet","save_methodology","write_yaml"],
-  "Views": ["addNewPort","copyCmd","load","loadFile","loadList","refresh","save","saveTriggers","setup","showToast","startTimer","stopTimer","toggleRefresh"],
-  "Wrappers": ["BaseWrapper","BruteWrapper","ImpacketWrapper","NetExecWrapper","NmapWrapper","WebFuzzWrapper","_build_auth_args","_check_target","_execute_streaming","_output_file","_show_next_steps","_subdns_ffuf","add_scan_record","brute_ssh","custom_scan","dir_fuzz","ensure_target","execute","is_available","ldap_enum","nxc_guest","nxc_ldap","nxc_null","nxc_pass_pol","nxc_rid_brute","nxc_shares","nxc_spray","nxc_users","nxc_winrm","os_scan","parse_output","ports_scan","quick_scan","recursive_fuzz","scan_custom","scan_full","scan_os","scan_ports","scan_quick","scan_scripts","scan_udp","scan_vuln","scripts_scan","smb_enum_shares","smb_enum_users","smb_guest_session","smb_null_session","smb_pass_pol","smb_rid_brute","spray_password","ssh","subdns_fuzz","udp_scan","vhost_fuzz","vuln_scan","web_fuzz","web_recursive","web_subdns","web_vhost","winrm_check"]
+  // core state management (state.py — StateManager)
+  "State": [
+    "_auto_load","set_target","_init_workspace","_generate_notes_template",
+    "_state_file","_load_state","_fresh_state","_migrate_state","_lock_file","_merge_state","_save_state",
+    "get","get_var","set","add_domain","add_port","add_user","add_hash","add_credential",
+    "add_directory","add_vhost","add_share","add_nse_result","add_vulnerability",
+    "update_banner","add_scan_record","add_note","set_flag","_write_list_file",
+    "get_open_ports","get_open_ports_proto","get_services_summary","has_service",
+    "export_state","start_methodology","complete_methodology_step","refresh_notes",
+    "_current_target_file","get_methodology_progress"
+  ],
+  // campaign-wide data (campaign.py — CampaignManager)
+  "Campaign": [
+    "set_campaign","clear_campaign","update_domain_info","_load_current_campaign",
+    "campaign_add_host","campaign_add_user","campaign_add_hash","campaign_add_credential"
+  ],
+  // knowledge graph (graph.py — GraphManager)
+  "Graph": [
+    "load_for_target","_graph_file","_fresh_graph","_lock",
+    "get_graph","sync_from_state",
+    "add_node","update_node","delete_node",
+    "add_edge","update_edge","delete_edge",
+    "update_positions","clear_manual","_services_match",
+    "_node_by_id","_edge_by_id","_make_node","_make_edge"
+  ],
+  // core modules: triggers, methodology, enumerate, reporting, sessions, cheatsheet, writeup
+  "Modules": [
+    "check_triggers","get_merged_triggers","init_custom_triggers","_inject_vars",
+    "check_port_trigger","_check_ad_environment","_check_web_findings",
+    "_check_credential_opportunities","_suggest_methodologies",
+    "load_all","get_applicable","auto_check_progress","mark_step_done","is_applicable","inject_variables",
+    "EnumerateEngine","_parse_nxc_shares","_parse_nxc_users","_parse_enum4linux_ng",
+    "_parse_whatweb","_parse_http_headers","_parse_ffuf_json","_parse_nmap_scripts",
+    "_parse_smtp_user_enum","_parse_snmpwalk","_parse_searchsploit",
+    "generate_markdown","generate_html","generate_timeline","_html_escape","_html_inline",
+    "SessionDB","record_command","mark_key","add_finding","session_summary","deactivate_session",
+    "SuggestionRule","CheatsheetEngine","CheatsheetEntry","WriteupParser","WriteupSyncManager","_sanitize_command"
+  ],
+  // tool wrappers (modules/wrappers/)
+  "Wrappers": [
+    "BaseWrapper","NmapWrapper","NetExecWrapper","WebFuzzWrapper","ImpacketWrapper","BruteWrapper",
+    "_show_next_steps","_auto_check_methodologies","_find_impacket","_parse_xml"
+  ],
+  // studio backend (studio/)
+  "Studio": [
+    "YamlManager","CommandModel","CheatsheetModel","StepModel","MethodologyModel",
+    "list_cheatsheets","get_cheatsheet","save_cheatsheet",
+    "list_methodologies","get_methodology","save_methodology"
+  ],
+  // utilities (utils/)
+  "Utils": [
+    "banner","print_command","print_success","print_error","print_warning","print_info","print_suggestion",
+    "print_state_table","print_ports_table","print_credentials_table","print_directory_tree",
+    "inject_vars","load_pentest_tools","ensure_dirs","OutputConfig"
+  ],
+  // CLI commands (cli/)
+  "Cli": [
+    "main","require_target","ensure_target","display_cheatsheet_results","register_cheatsheet_commands",
+    "target_set","target_show","target_campaign","target_set_domain","target_set_lhost",
+    "target_add_domain","target_add_user","target_add_cred","target_add_hash","target_add_vhost","target_flag","target_note",
+    "scan_quick","scan_detailed","scan_udp","scan_vuln","scan_custom","scan_ports","scan_os","scan_scripts","scan_full",
+    "state_show","state_ports","state_users","state_creds","state_dirs","state_export","state_history","state_workspace","state_refresh",
+    "nxc_null","nxc_guest","nxc_shares","nxc_users","nxc_rid_brute","nxc_pass_pol","nxc_ldap","nxc_winrm","nxc_spray",
+    "brute_ssh","brute_http",
+    "web_fuzz","web_vhost","web_subdns","web_recursive",
+    "asrep_roast","kerberoast","secretsdump","dcsync","psexec","wmiexec","smbclient",
+    "mode_show","mode_use_msf","register_suggest_command",
+    "methodology_list","methodology_status","methodology_next","methodology_done","methodology_auto_check",
+    "triggers_init","triggers_list","triggers_check",
+    "session_new","session_use","session_list","session_show","session_delete",
+    "session_commands","session_log","session_mark","session_findings",
+    "report_generate","enumerate_run","add_source","remove_source","sync_writeup"
+  ],
+  // REST API (api.py — FastAPI)
+  "Api": [
+    "get_config","get_state","get_engagement_status",
+    "get_suggestions","get_custom_triggers","save_custom_triggers",
+    "create_graph_node","update_graph_node","delete_graph_node",
+    "create_graph_edge","update_graph_edge","delete_graph_edge","save_graph_positions","clear_graph",
+    "create_session","activate_session","list_session_commands","log_manual_command",
+    "toggle_command_key","list_session_findings","create_finding","delete_finding",
+    "_build_suggestions","_get_graph_manager","_get_session_db","_inject","_load_suggestion_rules","_validate_filename"
+  ],
 };
 
 const callEdges = [
-  ["setup","startTimer"],["__init__.py","register_cheatsheet_commands"],["__init__.py","register_suggest_command"],
+  // ── State internal ──
   ["_auto_load","_load_state"],["_auto_load","_current_target_file"],
-  ["set_target","add_host"],["set_target","_load_state"],["set_target","_init_workspace"],["set_target","_current_target_file"],
+  ["set_target","add_domain"],["set_target","_load_state"],
+  ["set_target","_init_workspace"],["set_target","_current_target_file"],
   ["_init_workspace","_generate_notes_template"],
-  ["_load_state","_save_state"],["_load_state","_migrate_state"],["_load_state","_fresh_state"],["_load_state","_state_file"],
+  ["_load_state","_save_state"],["_load_state","_migrate_state"],
+  ["_load_state","_fresh_state"],["_load_state","_state_file"],
   ["_migrate_state","_lock_file"],["_migrate_state","_state_file"],
-  ["_lock_file","_state_file"],
   ["_save_state","_merge_state"],["_save_state","_lock_file"],["_save_state","_state_file"],
-  ["get","get_var"],["get_var","get_var"],
-  ["load_all","load_all"],
-  ["generate_html","generate_markdown"],
-  ["_names","_load_web_attacks"],["_steps_by_id","_load_web_app"],
-  ["evaluate_and_suggest","evaluate"],["evaluate_and_suggest","_replace_vars"],
-  ["load_rules","SuggestionRule"],
-  ["suggest","get_suggestions"],["suggest","check_triggers"],
-  ["scan_detailed","parse_output"],["scan_quick","parse_output"],
-  ["quick_scan","parse_output"],["detailed_scan","parse_output"],
-  ["execute","_execute_streaming"],["execute","add_scan_record"],["execute","parse_output"],
-  ["dir_fuzz","parse_output"],["vhost_fuzz","parse_output"],["subdns_fuzz","parse_output"],
-  ["brute_ssh","parse_output"],
-  ["nxc_null","parse_output"],["nxc_guest","parse_output"],["nxc_shares","parse_output"],
-  ["nxc_users","parse_output"],["nxc_rid_brute","parse_output"],["nxc_spray","parse_output"],
-  ["kerberoast","exec_shell"],["asrep_roast","exec_shell"],["dcsync","exec_shell"],["secretsdump","exec_shell"],
-  ["psexec","exec_shell"],["wmiexec","exec_shell"],["smbclient","exec_shell"],
+  ["add_domain","_save_state"],["add_port","_save_state"],["add_user","_save_state"],
+  ["add_hash","_save_state"],["add_credential","_save_state"],
+  ["add_directory","_save_state"],["add_vhost","_save_state"],["add_note","_save_state"],
+  ["set_flag","_save_state"],["add_scan_record","_save_state"],
+
+  // ── State → Campaign ──
+  ["set_target","campaign_add_host"],
+  ["add_user","campaign_add_user"],
+  ["add_hash","campaign_add_hash"],
+  ["add_credential","campaign_add_credential"],
+
+  // ── CLI → Wrappers ──
+  ["scan_quick","NmapWrapper"],["scan_detailed","NmapWrapper"],["scan_udp","NmapWrapper"],
+  ["scan_vuln","NmapWrapper"],["scan_ports","NmapWrapper"],["scan_os","NmapWrapper"],
+  ["scan_scripts","NmapWrapper"],["scan_full","NmapWrapper"],["scan_custom","NmapWrapper"],
+  ["nxc_null","NetExecWrapper"],["nxc_guest","NetExecWrapper"],["nxc_shares","NetExecWrapper"],
+  ["nxc_users","NetExecWrapper"],["nxc_rid_brute","NetExecWrapper"],
+  ["nxc_pass_pol","NetExecWrapper"],["nxc_spray","NetExecWrapper"],
+  ["brute_ssh","BruteWrapper"],["brute_http","BruteWrapper"],
+  ["web_fuzz","WebFuzzWrapper"],["web_vhost","WebFuzzWrapper"],
+  ["web_subdns","WebFuzzWrapper"],["web_recursive","WebFuzzWrapper"],
+  ["asrep_roast","ImpacketWrapper"],["kerberoast","ImpacketWrapper"],
+  ["secretsdump","ImpacketWrapper"],["dcsync","ImpacketWrapper"],
+  ["psexec","ImpacketWrapper"],["wmiexec","ImpacketWrapper"],["smbclient","ImpacketWrapper"],
+  ["enumerate_run","EnumerateEngine"],
+
+  // ── CLI → State ──
+  ["target_set","set_target"],
+  ["target_add_domain","add_domain"],["target_add_user","add_user"],
+  ["target_add_cred","add_credential"],["target_add_hash","add_hash"],
+  ["target_add_vhost","add_vhost"],["target_flag","set_flag"],["target_note","add_note"],
+  ["state_export","export_state"],["state_refresh","refresh_notes"],
+
+  // ── CLI → Utils (display) ──
+  ["state_show","print_state_table"],
+  ["state_ports","print_ports_table"],
+  ["state_creds","print_credentials_table"],
+
+  // ── CLI → Modules ──
+  ["methodology_next","auto_check_progress"],
+  ["methodology_done","mark_step_done"],
+  ["methodology_auto_check","auto_check_progress"],
+  ["triggers_check","check_triggers"],
+  ["triggers_init","init_custom_triggers"],
   ["report_generate","generate_markdown"],["report_generate","generate_html"],
-  ["target_set","set_target"],["target_show","print_state_table"],
-  ["state_ports","print_ports_table"],["state_creds","print_credentials_table"],
-  ["add_domain","_save_state"],["add_user","_save_state"],["add_port","_save_state"],
-  ["add_credential","_save_state"],["add_hash","_save_state"],["add_note","_save_state"],
-  ["set_flag","_save_state"],["add_share","_save_state"],["add_directory","_save_state"],["add_vhost","_save_state"],
+  ["register_cheatsheet_commands","CheatsheetEngine"],
+  ["display_cheatsheet_results","CheatsheetEngine"],
+
+  // ── CLI → Session ──
+  ["session_new","SessionDB"],
+  ["session_log","record_command"],
+  ["session_mark","mark_key"],
+  ["session_findings","add_finding"],
+
+  // ── Wrappers → State ──
+  ["NmapWrapper","add_port"],["NmapWrapper","add_scan_record"],
+  ["NmapWrapper","_parse_xml"],
+  ["NetExecWrapper","add_user"],["NetExecWrapper","add_scan_record"],
+  ["WebFuzzWrapper","add_directory"],["WebFuzzWrapper","add_scan_record"],
+  ["BruteWrapper","add_scan_record"],
+  ["ImpacketWrapper","add_hash"],["ImpacketWrapper","add_credential"],
+  ["ImpacketWrapper","_find_impacket"],
+  ["BaseWrapper","_show_next_steps"],["BaseWrapper","_auto_check_methodologies"],
+
+  // ── Wrappers → Modules ──
+  ["_show_next_steps","check_triggers"],
+  ["_auto_check_methodologies","auto_check_progress"],
+
+  // ── Wrappers inheritance ──
+  ["NmapWrapper","BaseWrapper"],["NetExecWrapper","BaseWrapper"],
+  ["WebFuzzWrapper","BaseWrapper"],["ImpacketWrapper","BaseWrapper"],
+  ["BruteWrapper","BaseWrapper"],
+
+  // ── Graph → State ──
+  ["load_for_target","sync_from_state"],
+  ["sync_from_state","get"],["sync_from_state","get_open_ports"],["sync_from_state","has_service"],
+
+  // ── API → Graph ──
+  ["_get_graph_manager","load_for_target"],
+  ["create_graph_node","add_node"],["update_graph_node","update_node"],["delete_graph_node","delete_node"],
+  ["create_graph_edge","add_edge"],["update_graph_edge","update_edge"],["delete_graph_edge","delete_edge"],
+  ["save_graph_positions","update_positions"],["clear_graph","clear_manual"],
+
+  // ── API → State ──
+  ["get_state","get"],
+  ["get_engagement_status","get_open_ports"],["get_engagement_status","has_service"],
+
+  // ── API → Modules/Suggestions ──
+  ["get_suggestions","_build_suggestions"],
+  ["_build_suggestions","get_merged_triggers"],
+  ["_build_suggestions","get_applicable"],
+  ["_build_suggestions","SuggestionRule"],
+  ["_load_suggestion_rules","SuggestionRule"],
+  ["_get_session_db","SessionDB"],
+  ["create_session","SessionDB"],
+  ["activate_session","SessionDB"],
+  ["log_manual_command","record_command"],
+  ["toggle_command_key","mark_key"],
+  ["create_finding","add_finding"],
+  ["_inject","inject_vars"],
+
+  // ── Modules → State ──
+  ["check_triggers","get_open_ports"],["check_triggers","get"],["check_triggers","has_service"],
+  ["_check_ad_environment","get"],["_check_web_findings","get"],
+  ["_check_credential_opportunities","get"],
+  ["auto_check_progress","get_methodology_progress"],
+  ["auto_check_progress","complete_methodology_step"],
+  ["mark_step_done","complete_methodology_step"],
+  ["mark_step_done","start_methodology"],
+  ["is_applicable","get_open_ports"],["is_applicable","has_service"],
+  ["generate_markdown","get"],["generate_html","get"],
+  ["EnumerateEngine","add_port"],["EnumerateEngine","add_user"],
+  ["EnumerateEngine","add_directory"],["EnumerateEngine","add_note"],
+  ["get_merged_triggers","init_custom_triggers"],
+
+  // ── Utils → State ──
+  ["inject_vars","get_var"],
+  ["print_state_table","get"],
+  ["print_ports_table","get_open_ports"],
+  ["print_credentials_table","get"],
+
+  // ── Studio ──
+  ["get_cheatsheet","YamlManager"],["save_cheatsheet","YamlManager"],
+  ["get_methodology","YamlManager"],["save_methodology","YamlManager"],
+
+  // ── Cheatsheet/Methodology → State ──
+  ["inject_variables","get_var"],
+  ["CheatsheetEntry","inject_variables"],
+  ["load_all","get_applicable"],
 ];
 
 // ── Build graph ──
@@ -139,9 +324,7 @@ const nodeMap = {};
 const nodes = [];
 const links = [];
 
-// Create unique nodes from cluster membership (skip Tests for cleaner view)
 for (const [cluster, members] of Object.entries(clusterMembers)) {
-  if (cluster === "Tests") continue;
   for (const name of members) {
     const key = `${name}@${cluster}`;
     if (!nodeMap[key]) {
@@ -152,10 +335,10 @@ for (const [cluster, members] of Object.entries(clusterMembers)) {
   }
 }
 
-// Resolve edges — find source/target in non-Test clusters
+// Resolve edges — priority: State/Campaign/Graph first, then Modules/Wrappers/Studio/Utils, then Cli/Api
 function findNode(name) {
-  // Prefer specific cluster match
-  for (const cluster of ["Capo","Cli","Modules","Wrappers","Studio","Js","Views"]) {
+  const priority = ["State","Campaign","Graph","Modules","Wrappers","Studio","Utils","Cli","Api"];
+  for (const cluster of priority) {
     const key = `${name}@${cluster}`;
     if (nodeMap[key]) return nodeMap[key];
   }
@@ -183,19 +366,18 @@ function resize() {
 resize();
 window.addEventListener("resize", resize);
 
-// ── Force simulation (manual) ──
+// ── Force simulation ──
 let showLabels = true;
 let physicsOn = true;
 let baseNodeSize = 5;
 let linkAlpha = 0.25;
 let filterCluster = "all";
 
-// Initialize positions in cluster groups
+const clusterKeys = Object.keys(clusterColors);
 const clusterCenters = {};
-const clusterKeys = Object.keys(clusterColors).filter(c => c !== "Tests");
 clusterKeys.forEach((c, i) => {
   const angle = (i / clusterKeys.length) * Math.PI * 2;
-  clusterCenters[c] = { x: Math.cos(angle) * 250, y: Math.sin(angle) * 250 };
+  clusterCenters[c] = { x: Math.cos(angle) * 300, y: Math.sin(angle) * 300 };
 });
 
 nodes.forEach(n => {
@@ -205,7 +387,7 @@ nodes.forEach(n => {
 });
 
 // Camera
-let camX = 0, camY = 0, camZoom = 1;
+let camX = 0, camY = 0, camZoom = 0.7;
 
 function toScreen(x, y) {
   return [(x - camX) * camZoom + W / 2, (y - camY) * camZoom + H / 2];
@@ -214,16 +396,14 @@ function toWorld(sx, sy) {
   return [(sx - W / 2) / camZoom + camX, (sy - H / 2) / camZoom + camY];
 }
 
-// Physics step
 function simulate() {
   if (!physicsOn) return;
   const alpha = 0.3;
-  const repulsion = 800;
-  const attraction = 0.005;
-  const clusterPull = 0.01;
+  const repulsion = 900;
+  const attraction = 0.004;
+  const clusterPull = 0.008;
   const damping = 0.85;
 
-  // Repulsion (Barnes-Hut approximation — simplified N^2 for small graph)
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
       const a = nodes[i], b = nodes[j];
@@ -231,14 +411,14 @@ function simulate() {
       let d2 = dx * dx + dy * dy;
       if (d2 < 1) d2 = 1;
       const f = repulsion / d2;
-      const fx = dx / Math.sqrt(d2) * f * alpha;
-      const fy = dy / Math.sqrt(d2) * f * alpha;
+      const sq = Math.sqrt(d2);
+      const fx = dx / sq * f * alpha;
+      const fy = dy / sq * f * alpha;
       a.vx -= fx; a.vy -= fy;
       b.vx += fx; b.vy += fy;
     }
   }
 
-  // Link attraction
   for (const l of links) {
     const dx = l.target.x - l.source.x;
     const dy = l.target.y - l.source.y;
@@ -249,7 +429,6 @@ function simulate() {
     l.target.vx -= fx; l.target.vy -= fy;
   }
 
-  // Cluster centering pull
   for (const n of nodes) {
     const cc = clusterCenters[n.cluster];
     if (cc) {
@@ -258,7 +437,6 @@ function simulate() {
     }
   }
 
-  // Apply velocity
   for (const n of nodes) {
     n.vx *= damping;
     n.vy *= damping;
@@ -281,27 +459,25 @@ function draw() {
   const visibleLinks = links.filter(l => visibleSet.has(l.source) && visibleSet.has(l.target));
 
   // Draw links
-  ctx.lineWidth = 0.5 * camZoom;
   for (const l of visibleLinks) {
     const [x1, y1] = toScreen(l.source.x, l.source.y);
     const [x2, y2] = toScreen(l.target.x, l.target.y);
 
     let alpha = linkAlpha;
+    let lw = 0.5 * camZoom;
     if (hoveredNode && (l.source === hoveredNode || l.target === hoveredNode)) {
-      alpha = 0.9;
-      ctx.lineWidth = 1.5 * camZoom;
+      alpha = 0.9; lw = 1.5 * camZoom;
     } else if (hoveredNode) {
-      alpha = 0.05;
-      ctx.lineWidth = 0.5 * camZoom;
+      alpha = 0.04; lw = 0.5 * camZoom;
     }
 
     ctx.strokeStyle = `rgba(88,166,255,${alpha})`;
+    ctx.lineWidth = lw;
     ctx.beginPath();
     ctx.moveTo(x1, y1);
     ctx.lineTo(x2, y2);
     ctx.stroke();
 
-    // Arrow
     if (alpha > 0.1) {
       const angle = Math.atan2(y2 - y1, x2 - x1);
       const r = (baseNodeSize + Math.min(l.target.connections, 10)) * camZoom;
@@ -328,7 +504,7 @@ function draw() {
       const isConnected = visibleLinks.some(l =>
         (l.source === hoveredNode && l.target === n) || (l.target === hoveredNode && l.source === n)
       );
-      nodeAlpha = isConnected ? 1 : 0.15;
+      nodeAlpha = isConnected ? 1 : 0.12;
     }
 
     ctx.globalAlpha = nodeAlpha;
@@ -343,9 +519,8 @@ function draw() {
       ctx.stroke();
     }
 
-    // Labels
-    if (showLabels && camZoom > 0.6) {
-      const fontSize = Math.max(9, 11 * camZoom);
+    if (showLabels && camZoom > 0.5) {
+      const fontSize = Math.max(8, 10 * camZoom);
       ctx.font = `${fontSize}px 'Segoe UI', system-ui, sans-serif`;
       ctx.fillStyle = nodeAlpha < 0.3 ? `rgba(201,209,217,${nodeAlpha})` : "#c9d1d9";
       ctx.textAlign = "center";
@@ -374,15 +549,11 @@ let isPanning = false, panStartX, panStartY;
 
 canvas.addEventListener("mousedown", e => {
   const [wx, wy] = toWorld(e.clientX, e.clientY);
-  // Check if clicking a node
   const visibleNodes = filterCluster === "all" ? nodes : nodes.filter(n => n.cluster === filterCluster);
   for (const n of visibleNodes) {
     const dx = n.x - wx, dy = n.y - wy;
     const r = (baseNodeSize + Math.min(n.connections * 0.5, 8)) / camZoom + 5;
-    if (dx * dx + dy * dy < r * r) {
-      dragNode = n;
-      return;
-    }
+    if (dx * dx + dy * dy < r * r) { dragNode = n; return; }
   }
   isPanning = true;
   panStartX = e.clientX;
@@ -392,23 +563,18 @@ canvas.addEventListener("mousedown", e => {
 canvas.addEventListener("mousemove", e => {
   if (dragNode) {
     const [wx, wy] = toWorld(e.clientX, e.clientY);
-    dragNode.x = wx;
-    dragNode.y = wy;
-    dragNode.vx = 0;
-    dragNode.vy = 0;
+    dragNode.x = wx; dragNode.y = wy;
+    dragNode.vx = 0; dragNode.vy = 0;
     return;
   }
   if (isPanning) {
     const dx = e.clientX - panStartX;
     const dy = e.clientY - panStartY;
-    camX -= dx / camZoom;
-    camY -= dy / camZoom;
-    panStartX = e.clientX;
-    panStartY = e.clientY;
+    camX -= dx / camZoom; camY -= dy / camZoom;
+    panStartX = e.clientX; panStartY = e.clientY;
     return;
   }
 
-  // Hover detection
   const [wx, wy] = toWorld(e.clientX, e.clientY);
   const visibleNodes = filterCluster === "all" ? nodes : nodes.filter(n => n.cluster === filterCluster);
   let found = null;
@@ -424,7 +590,7 @@ canvas.addEventListener("mousemove", e => {
   if (found) {
     tooltip.style.display = "block";
     tooltip.style.left = (e.clientX + 15) + "px";
-    tooltip.style.top = (e.clientY + 15) + "px";
+    tooltip.style.top  = (e.clientY + 15) + "px";
     tooltip.querySelector(".tt-name").textContent = found.name;
     tooltip.querySelector(".tt-cluster").textContent = "Cluster: " + found.cluster;
     tooltip.querySelector(".tt-connections").textContent = "Connections: " + found.connections;
@@ -456,14 +622,13 @@ document.getElementById("btnPhysics").addEventListener("click", e => {
   e.target.classList.toggle("active", physicsOn);
 });
 document.getElementById("btnReset").addEventListener("click", () => {
-  camX = 0; camY = 0; camZoom = 1; filterCluster = "all";
+  camX = 0; camY = 0; camZoom = 0.7; filterCluster = "all";
   clusterSelect.value = "all";
 });
 
 // ── Legend ──
 const legend = document.getElementById("legend");
 for (const [name, color] of Object.entries(clusterColors)) {
-  if (name === "Tests") continue;
   const count = clusterMembers[name]?.length || 0;
   const div = document.createElement("div");
   div.className = "legend-item";
