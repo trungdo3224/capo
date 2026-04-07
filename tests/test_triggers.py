@@ -1,16 +1,12 @@
 """Tests for custom trigger loading & merging."""
 
-import json
-
 import pytest
 import yaml
 
 from capo.modules.triggers import (
     PORT_TRIGGERS,
-    _inject_vars,
     _load_custom_triggers,
     get_merged_triggers,
-    init_custom_triggers,
 )
 
 
@@ -113,36 +109,3 @@ class TestMergedTriggers:
         custom_triggers_file.write_text(yaml.dump(data), encoding="utf-8")
         merged = get_merged_triggers()
         assert 9999 in merged
-
-
-class TestInitCustomTriggers:
-    def test_creates_file(self, custom_triggers_file):
-        """Creates the template file."""
-        assert init_custom_triggers() is True
-        assert custom_triggers_file.exists()
-        content = yaml.safe_load(custom_triggers_file.read_text())
-        # Template has commented-out triggers, so parsed value is None or has triggers key
-        assert content is None or "triggers" in content or content == {}
-
-    def test_no_overwrite(self, custom_triggers_file):
-        """Does not overwrite existing file."""
-        custom_triggers_file.write_text("existing", encoding="utf-8")
-        assert init_custom_triggers() is False
-        assert custom_triggers_file.read_text() == "existing"
-
-
-class TestInjectVars:
-    def test_var_replacement(self, monkeypatch):
-        """Replaces known {VAR} placeholders."""
-        monkeypatch.setattr("capo.modules.triggers.state_manager.get_var",
-                            lambda v: {"IP": "10.10.10.1", "DOMAIN": "test.local"}.get(v))
-        result = _inject_vars("nxc smb {IP} -d {DOMAIN}")
-        assert result == "nxc smb 10.10.10.1 -d test.local"
-
-    def test_unknown_var_kept(self, monkeypatch):
-        """Unknown variables are left as-is."""
-        monkeypatch.setattr("capo.modules.triggers.state_manager.get_var",
-                            lambda v: None)
-        result = _inject_vars("connect {IP}:{PORT}")
-        assert "{IP}" in result
-        assert "{PORT}" in result

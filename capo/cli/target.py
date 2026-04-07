@@ -25,13 +25,13 @@ def target_set(
     """Set the current target and initialize workspace."""
     if campaign:
         campaign_manager.set_campaign(campaign)
-        
+
     try:
         workspace = state_manager.set_target(ip)
     except TargetError as e:
         print_error(str(e))
         raise typer.Exit(1)
-        
+
     if domain:
         state_manager.add_domain(domain)
 
@@ -40,7 +40,7 @@ def target_set(
         print_info(f"Domain: {domain}")
     if campaign_manager.active:
         print_info(f"Campaign Active: {campaign_manager.name}")
-        
+
     print_info(f"Workspace: {workspace}")
     print_directory_tree(workspace)
 
@@ -55,7 +55,7 @@ def target_campaign(
         campaign_manager.clear_campaign()
         print_success("Exited campaign. Operating in single-host mode.")
         return
-        
+
     if name:
         campaign_manager.set_campaign(name)
         print_success(f"Campaign set: {name}")
@@ -65,7 +65,6 @@ def target_campaign(
     else:
         if campaign_manager.active:
             print_info(f"Active Campaign: {campaign_manager.name}")
-            # Could show campaign stats here
         else:
             print_info("No active campaign. Operating in single-host mode.")
 
@@ -114,68 +113,3 @@ def target_set_lhost(
     state_manager.set("lhost", lhost)
     state_manager.set("lport", lport)
     print_success(f"LHOST={lhost}, LPORT={lport}")
-
-
-@target_app.command("add-user")
-def target_add_user(
-    username: str = typer.Argument(..., help="username to add"),
-):
-    """Manually add a discovered username."""
-    require_target()
-    state_manager.add_user(username)
-    print_success(f"Added user: {username}")
-
-
-@target_app.command("add-cred")
-def target_add_cred(
-    username: str = typer.Argument(..., help="username"),
-    password: str = typer.Argument(..., help="password"),
-    service: str = typer.Option("", "--service", "-s", help="service name"),
-):
-    """Add discovered credentials."""
-    require_target()
-    state_manager.add_credential(username, password, service)
-    print_success(f"Credential added: {username}")
-
-
-@target_app.command("add-hash")
-def target_add_hash(
-    hash_value: str = typer.Argument(..., help="hash value"),
-    username: str = typer.Option("", "--user", "-u", help="associated username"),
-):
-    """Add a discovered hash."""
-    require_target()
-    state_manager.add_hash(hash_value, username)
-    print_success("Hash added.")
-
-
-@target_app.command("add-vhost")
-def target_add_vhost(
-    vhost: str = typer.Argument(..., help="domain or subdomain to add"),
-):
-    """Manually add a discovered vhost/subdomain."""
-    require_target()
-    state_manager.add_vhost(vhost)
-    print_success(f"Added vhost: {vhost}")
-
-
-@target_app.command("flag")
-def target_flag(
-    flag_type: str = typer.Argument(..., help="flag type: local or proof"),
-    value: str = typer.Argument(..., help="flag value"),
-):
-    """Record a captured flag (local.txt / proof.txt)."""
-    require_target()
-    key = f"{flag_type}_txt"
-    state_manager.set_flag(key, value)
-    print_success(f"🚩 {flag_type}.txt = {value}")
-
-
-@target_app.command("note")
-def target_note(
-    note: str = typer.Argument(..., help="note text"),
-):
-    """Add a quick note to the target."""
-    require_target()
-    state_manager.add_note(note)
-    print_success("Note added.")

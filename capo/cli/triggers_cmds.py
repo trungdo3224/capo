@@ -2,57 +2,16 @@
 
 import typer
 
-from capo.cli.helpers import print_json_data, require_target
-from capo.utils.display import console, print_info, print_success, print_warning
+from capo.cli.helpers import require_target
 
-triggers_app = typer.Typer(help="Custom trigger management")
-
-
-@triggers_app.command("init")
-def triggers_init():
-    """Create a starter custom_triggers.yaml file."""
-    from capo.modules.triggers import init_custom_triggers
-
-    from capo.config import CUSTOM_TRIGGERS_FILE
-    created = init_custom_triggers()
-    if created:
-        print_success(f"Created {CUSTOM_TRIGGERS_FILE}")
-        print_info("Edit this file to add your own port-based suggestions.")
-    else:
-        print_warning(f"File already exists: {CUSTOM_TRIGGERS_FILE}")
+triggers_app = typer.Typer(help="Service trigger management")
 
 
-@triggers_app.command("list")
-def triggers_list(
-    json_output: bool = typer.Option(False, "--json", help="Output as JSON"),
-):
-    """List all triggers (built-in + custom)."""
-    from capo.modules.triggers import get_merged_triggers
-
-    merged = get_merged_triggers()
-    if json_output:
-        print_json_data({str(k): v for k, v in sorted(merged.items())})
+@triggers_app.callback(invoke_without_command=True)
+def triggers_check(ctx: typer.Context):
+    """Show discovered services for the current target."""
+    if ctx.invoked_subcommand is not None:
         return
-    from rich.table import Table
-
-    table = Table(title="Port Triggers", show_lines=True)
-    table.add_column("Port", style="cyan", width=8)
-    table.add_column("Title", style="bold")
-    table.add_column("Suggestions", style="dim")
-    for port in sorted(merged.keys()):
-        for trigger in merged[port]:
-            table.add_row(
-                str(port),
-                trigger["title"],
-                "\n".join(trigger["suggestions"][:3]),
-            )
-    console.print(table)
-
-
-@triggers_app.command("check")
-def triggers_check():
-    """Run all triggers against the current target state."""
     require_target()
     from capo.modules.triggers import check_triggers
-
     check_triggers()

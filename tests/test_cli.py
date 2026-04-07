@@ -39,14 +39,15 @@ class TestGlobalOptions:
     def test_help_lists_all_groups(self):
         result = runner.invoke(_app(), ["--help"])
         assert result.exit_code == 0
-        for group in ("target", "scan", "nxc", "brute", "web", "state",
-                      "mode", "report", "triggers", "methodology"):
+        for group in ("target", "found", "scan", "enumerate", "nxc",
+                      "kerberos", "brute", "web", "state", "triggers",
+                      "methodology", "session", "report"):
             assert group in result.output
 
     def test_help_lists_standalone_commands(self):
         result = runner.invoke(_app(), ["--help"])
         assert result.exit_code == 0
-        for cmd in ("search", "tools", "suggest"):
+        for cmd in ("search", "tools"):
             assert cmd in result.output
 
 
@@ -73,8 +74,9 @@ class TestSubcommandHelp:
     """Test that all subcommands respond to --help."""
 
     @pytest.mark.parametrize("group", [
-        "scan", "nxc", "brute", "web", "state",
-        "mode", "report", "triggers", "methodology",
+        "target", "found", "scan", "enumerate", "nxc",
+        "kerberos", "brute", "web", "state",
+        "methodology", "session", "report",
     ])
     def test_subcommand_help(self, group):
         result = runner.invoke(_app(), [group, "--help"])
@@ -93,6 +95,6 @@ class TestErrorHandling:
         result = runner.invoke(_app(), ["state", "show"])
         assert result.exit_code == 1
 
-    def test_suggest_without_target(self):
-        result = runner.invoke(_app(), ["suggest"])
+    def test_triggers_without_target(self):
+        result = runner.invoke(_app(), ["triggers"])
         assert result.exit_code == 1
