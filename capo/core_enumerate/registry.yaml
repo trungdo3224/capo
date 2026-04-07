@@ -23,12 +23,28 @@ services:
         timeout: 60
         parser: nmap_scripts
 
+      - name: "FTP anonymous login"
+        tool: curl
+        cmd: "curl -s --list-only ftp://{IP}/ --user anonymous:anonymous"
+        auth: false
+        timeout: 15
+
   ssh:
     ports: [22]
     commands:
       - name: "SSH version & algorithms"
         tool: nmap
         cmd: "nmap -sV -p 22 --script ssh2-enum-algos,ssh-auth-methods {IP}"
+        auth: false
+        timeout: 30
+        parser: nmap_scripts
+
+  telnet:
+    ports: [23]
+    commands:
+      - name: "Telnet banner & NSE"
+        tool: nmap
+        cmd: "nmap -sV -p 23 --script telnet-ntlm-info,telnet-encryption {IP}"
         auth: false
         timeout: 30
         parser: nmap_scripts
@@ -45,7 +61,7 @@ services:
 
       - name: "SMTP NSE scripts"
         tool: nmap
-        cmd: "nmap --script smtp-commands,smtp-enum-users,smtp-open-relay -p 25 {IP}"
+        cmd: "nmap --script smtp-commands,smtp-enum-users,smtp-open-relay -p {PORT} {IP}"
         auth: false
         timeout: 60
         parser: nmap_scripts
@@ -67,6 +83,12 @@ services:
         auth: false
         timeout: 15
 
+      - name: "Subdomain brute"
+        tool: gobuster
+        cmd: "gobuster dns -d {DOMAIN} -r {IP} -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -t 30"
+        auth: false
+        timeout: 120
+
   http:
     ports: [80, 8080, 8000, 8888]
     commands:
@@ -84,11 +106,12 @@ services:
         timeout: 10
         parser: http_headers
 
-      - name: "robots.txt"
+      - name: "Common files probe"
         tool: curl
-        cmd: "curl -s http://{IP}:{PORT}/robots.txt"
+        cmd: "curl -s -o /dev/null -w '%{http_code} %{url}\\n' http://{IP}:{PORT}/robots.txt http://{IP}:{PORT}/sitemap.xml http://{IP}:{PORT}/.well-known/security.txt http://{IP}:{PORT}/crossdomain.xml http://{IP}:{PORT}/.git/HEAD http://{IP}:{PORT}/.env http://{IP}:{PORT}/wp-login.php http://{IP}:{PORT}/web.config"
         auth: false
-        timeout: 10
+        timeout: 15
+        parser: common_files
 
       - name: "Directory fuzz"
         tool: ffuf
@@ -97,11 +120,36 @@ services:
         timeout: 300
         parser: ffuf_json
 
-      - name: "Nikto scan"
-        tool: nikto
-        cmd: "nikto -h http://{IP}:{PORT} -o {OUTPUT_DIR}/nikto.txt"
+      - name: "Extension fuzz"
+        tool: ffuf
+        cmd: "ffuf -u http://{IP}:{PORT}/FUZZ -w {WORDLIST} -ac -mc 200,204,301,302,307,401,403 -e .php,.asp,.aspx,.jsp,.txt,.bak,.old,.html -o {OUTPUT_DIR}/ffuf_ext.json -of json"
         auth: false
         timeout: 300
+        parser: ffuf_json
+
+      - name: "Recursive dir bust"
+        tool: feroxbuster
+        cmd: "feroxbuster -u http://{IP}:{PORT} -w {WORDLIST} --depth 2 --no-state -q -o {OUTPUT_DIR}/feroxbuster.txt"
+        auth: false
+        timeout: 300
+
+      - name: "Vhost fuzz"
+        tool: ffuf
+        cmd: "ffuf -u http://{IP}:{PORT}/ -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -o {OUTPUT_DIR}/ffuf_vhosts.json -of json"
+        auth: false
+        timeout: 120
+
+      - name: "WordPress scan"
+        tool: wpscan
+        cmd: "wpscan --url http://{IP}:{PORT} --enumerate vp,vt,u --plugins-detection mixed --no-banner -o {OUTPUT_DIR}/wpscan.txt"
+        auth: false
+        timeout: 180
+
+      - name: "CMS scan (Drupal/Joomla/SilverStripe)"
+        tool: droopescan
+        cmd: "droopescan scan -u http://{IP}:{PORT}/ -t 10"
+        auth: false
+        timeout: 120
 
   https:
     ports: [443, 8443]
@@ -126,11 +174,12 @@ services:
         timeout: 10
         parser: http_headers
 
-      - name: "robots.txt (HTTPS)"
+      - name: "Common files probe (HTTPS)"
         tool: curl
-        cmd: "curl -sk https://{IP}:{PORT}/robots.txt"
+        cmd: "curl -sk -o /dev/null -w '%{http_code} %{url}\\n' https://{IP}:{PORT}/robots.txt https://{IP}:{PORT}/sitemap.xml https://{IP}:{PORT}/.well-known/security.txt https://{IP}:{PORT}/crossdomain.xml https://{IP}:{PORT}/.git/HEAD https://{IP}:{PORT}/.env https://{IP}:{PORT}/wp-login.php https://{IP}:{PORT}/web.config"
         auth: false
-        timeout: 10
+        timeout: 15
+        parser: common_files
 
       - name: "Directory fuzz (HTTPS)"
         tool: ffuf
@@ -138,6 +187,57 @@ services:
         auth: false
         timeout: 300
         parser: ffuf_json
+
+      - name: "Extension fuzz (HTTPS)"
+        tool: ffuf
+        cmd: "ffuf -u https://{IP}:{PORT}/FUZZ -w {WORDLIST} -ac -mc 200,204,301,302,307,401,403 -e .php,.asp,.aspx,.jsp,.txt,.bak,.old,.html -o {OUTPUT_DIR}/ffuf_https_ext.json -of json"
+        auth: false
+        timeout: 300
+        parser: ffuf_json
+
+      - name: "Recursive dir bust (HTTPS)"
+        tool: feroxbuster
+        cmd: "feroxbuster -u https://{IP}:{PORT} -w {WORDLIST} --insecure --depth 2 --no-state -q -o {OUTPUT_DIR}/feroxbuster_https.txt"
+        auth: false
+        timeout: 300
+
+      - name: "Vhost fuzz (HTTPS)"
+        tool: ffuf
+        cmd: "ffuf -u https://{IP}:{PORT}/ -H 'Host: FUZZ.{DOMAIN}' -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -ac -o {OUTPUT_DIR}/ffuf_https_vhosts.json -of json"
+        auth: false
+        timeout: 120
+
+      - name: "WordPress scan (HTTPS)"
+        tool: wpscan
+        cmd: "wpscan --url https://{IP}:{PORT} --enumerate vp,vt,u --plugins-detection mixed --no-banner --disable-tls-checks -o {OUTPUT_DIR}/wpscan_https.txt"
+        auth: false
+        timeout: 180
+
+      - name: "CMS scan (Drupal/Joomla/SilverStripe) (HTTPS)"
+        tool: droopescan
+        cmd: "droopescan scan -u https://{IP}:{PORT}/ -t 10"
+        auth: false
+        timeout: 120
+
+  pop3:
+    ports: [110, 995]
+    commands:
+      - name: "POP3 NSE scripts"
+        tool: nmap
+        cmd: "nmap -sV -p {PORT} --script pop3-capabilities,pop3-ntlm-info {IP}"
+        auth: false
+        timeout: 30
+        parser: nmap_scripts
+
+  imap:
+    ports: [143, 993]
+    commands:
+      - name: "IMAP NSE scripts"
+        tool: nmap
+        cmd: "nmap -sV -p {PORT} --script imap-capabilities,imap-ntlm-info {IP}"
+        auth: false
+        timeout: 30
+        parser: nmap_scripts
 
   smb:
     ports: [139, 445]
@@ -189,6 +289,13 @@ services:
         auth: false
         timeout: 30
 
+      - name: "SMB vuln scan"
+        tool: nmap
+        cmd: "nmap --script smb-vuln-ms17-010,smb-vuln-ms08-067,smb-vuln-cve-2017-7494 -p {PORT} {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
       - name: "SMB auth shares"
         tool: nxc
         cmd: "nxc smb {IP} -u {USER} -p {PASS} --shares"
@@ -229,6 +336,13 @@ services:
         timeout: 30
         parser: rpcclient_enum
 
+      - name: "RPC auth enum"
+        tool: rpcclient
+        cmd: "rpcclient -U '{USER}%{PASS}' {IP} -c 'enumdomusers; enumdomgroups; querydominfo; enumprivs'"
+        auth: true
+        timeout: 30
+        parser: rpcclient_enum
+
   ldap:
     ports: [389, 636]
     commands:
@@ -251,6 +365,12 @@ services:
         auth: true
         timeout: 60
         parser: nxc_users
+
+      - name: "LDAP domain dump"
+        tool: ldapdomaindump
+        cmd: "ldapdomaindump -u '{DOMAIN}\\{USER}' -p '{PASS}' ldap://{IP} -o {OUTPUT_DIR}/ldapdomaindump"
+        auth: true
+        timeout: 120
 
   kerberos:
     ports: [88]
@@ -292,7 +412,7 @@ services:
         timeout: 60
         parser: onesixtyone
 
-      - name: "SNMP walk"
+      - name: "SNMP full walk"
         tool: snmpwalk
         cmd: "snmpwalk -v2c -c {COMMUNITY} {IP}"
         auth: false
@@ -302,6 +422,30 @@ services:
       - name: "SNMP system info"
         tool: snmpwalk
         cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.2.1.1"
+        auth: false
+        timeout: 30
+
+      - name: "SNMP user accounts"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.4.1.77.1.2.25"
+        auth: false
+        timeout: 30
+
+      - name: "SNMP running processes"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.2.1.25.4.2.1.2"
+        auth: false
+        timeout: 30
+
+      - name: "SNMP installed software"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.2.1.25.6.3.1.2"
+        auth: false
+        timeout: 60
+
+      - name: "SNMP TCP open ports"
+        tool: snmpwalk
+        cmd: "snmpwalk -v2c -c {COMMUNITY} {IP} 1.3.6.1.2.1.6.13.1.3"
         auth: false
         timeout: 30
 
@@ -315,15 +459,16 @@ services:
         timeout: 15
         parser: showmount
 
+      - name: "NFS NSE scripts"
+        tool: nmap
+        cmd: "nmap --script nfs-ls,nfs-showmount,nfs-statfs -p 2049 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
   mssql:
     ports: [1433]
     commands:
-      - name: "MSSQL NXC enum"
-        tool: nxc
-        cmd: "nxc mssql {IP} -u {USER} -p {PASS}"
-        auth: true
-        timeout: 30
-
       - name: "MSSQL NSE scripts"
         tool: nmap
         cmd: "nmap --script ms-sql-info,ms-sql-config,ms-sql-ntlm-info -p 1433 {IP}"
@@ -331,12 +476,28 @@ services:
         timeout: 60
         parser: nmap_scripts
 
+      - name: "MSSQL NXC enum"
+        tool: nxc
+        cmd: "nxc mssql {IP} -u {USER} -p {PASS}"
+        auth: true
+        timeout: 30
+
   mysql:
     ports: [3306]
     commands:
       - name: "MySQL NSE scripts"
         tool: nmap
-        cmd: "nmap --script mysql-info,mysql-enum,mysql-databases -p 3306 {IP}"
+        cmd: "nmap --script mysql-info,mysql-enum,mysql-databases,mysql-empty-password -p 3306 {IP}"
+        auth: false
+        timeout: 60
+        parser: nmap_scripts
+
+  postgresql:
+    ports: [5432]
+    commands:
+      - name: "PostgreSQL NSE scripts"
+        tool: nmap
+        cmd: "nmap -sV -p 5432 --script pgsql-brute {IP}"
         auth: false
         timeout: 60
         parser: nmap_scripts
@@ -349,6 +510,16 @@ services:
         cmd: "nmap -sV --script rdp-enum-encryption,rdp-vuln-ms12-020,rdp-ntlm-info -p 3389 {IP}"
         auth: false
         timeout: 60
+        parser: nmap_scripts
+
+  vnc:
+    ports: [5900, 5901]
+    commands:
+      - name: "VNC NSE scripts"
+        tool: nmap
+        cmd: "nmap -sV -p {PORT} --script vnc-info,vnc-title {IP}"
+        auth: false
+        timeout: 30
         parser: nmap_scripts
 
   winrm:
@@ -369,13 +540,9 @@ services:
         auth: false
         timeout: 10
 
-  # Special: runs searchsploit for all discovered service+version combos
-  versions:
-    ports: []
-    commands:
-      - name: "SearchSploit lookup"
-        tool: searchsploit
-        cmd: "searchsploit --color=never {SERVICE} {VERSION}"
+      - name: "Redis NSE scripts"
+        tool: nmap
+        cmd: "nmap -sV -p 6379 --script redis-info {IP}"
         auth: false
-        timeout: 15
-        parser: searchsploit
+        timeout: 30
+        parser: nmap_scripts

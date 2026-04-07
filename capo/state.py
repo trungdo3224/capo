@@ -553,6 +553,20 @@ class StateManager:
             self._state["directories"].append(entry)
             self._save_state()
 
+    def add_software(self, name: str, version: str, source: str = ""):
+        """Add a discovered software+version pair (e.g. from whatweb, page scrape)."""
+        if not name or not version:
+            return
+        self._state.setdefault("software", [])
+        # Dedup by name+version
+        for existing in self._state["software"]:
+            if existing["name"].lower() == name.lower() and existing["version"] == version:
+                return
+        self._state["software"].append(
+            {"name": name, "version": version, "source": source}
+        )
+        self._save_state()
+
     def add_vhost(self, vhost: str):
         """Add a discovered virtual host."""
         self._state.setdefault("vhosts", [])

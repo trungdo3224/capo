@@ -105,8 +105,24 @@ class TestShowmountParser:
 class TestWhatwebParser:
     def test_extracts_techs(self):
         stdout = "http://10.10.10.100 [200 OK] Apache[2.4.49], PHP[7.4.3], WordPress[5.8], Title[Blog]"
-        result = _parse_whatweb(stdout, "")
+        with patch("capo.modules.enumerate.state_manager"):
+            result = _parse_whatweb(stdout, "")
         assert "Apache" in result["summary"]
+
+    def test_feeds_versioned_software_to_state(self):
+        stdout = "http://10.10.10.100 [200 OK] Apache[2.4.49], PHP[7.4.3], WordPress[5.8]"
+        mock_sm = MagicMock()
+        with patch("capo.modules.enumerate.state_manager", mock_sm):
+            result = _parse_whatweb(stdout, "")
+        # Should have called add_software for versioned entries
+        # source is a keyword arg, so check args + kwargs separately
+        calls = [(c.args[0], c.args[1]) for c in mock_sm.add_software.call_args_list]
+        assert ("Apache", "2.4.49") in calls
+        assert ("PHP", "7.4.3") in calls
+        assert ("WordPress", "5.8") in calls
+        # All calls should pass source="whatweb"
+        for c in mock_sm.add_software.call_args_list:
+            assert c.kwargs.get("source") == "whatweb"
 
 
 class TestHttpHeadersParser:
@@ -301,6 +317,37 @@ class TestEnumerateEngine:
             )
         assert cr.status == "skipped"
         assert "not installed" in cr.findings
+
+    def test_add_software_to_state(self, engine_with_state):
+        engine, mgr = engine_with_state
+        mgr.add_software("WordPress", "5.8", source="whatweb")
+        mgr.add_software("Apache", "2.4.49", source="whatweb")
+        # Dedup: same name+version should not duplicate
+        mgr.add_software("WordPress", "5.8", source="page_scrape")
+        sw = mgr.get("software", [])
+        assert len(sw) == 2
+        names = [s["name"] for s in sw]
+        assert "WordPress" in names
+        assert "Apache" in names
+
+    def test_searchsploit_queries_software(self, engine_with_state):
+        engine, mgr = engine_with_state
+        # Add software to state (as whatweb/scrape would)
+        mgr.add_software("WordPress", "5.8", source="whatweb")
+        mgr.add_software("Drupal", "9.3.0", source="page_scrape")
+        matched = [("http", 80, {})]
+        with patch("capo.modules.enumerate.shutil.which", return_value="/usr/bin/searchsploit"), \
+             patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                stdout="Exploits: No Results\nShellcodes: No Results\n",
+                stderr="", returncode=0,
+            )
+            results = engine._run_searchsploit(Path("/tmp"), matched)
+        # Should have queried for both port service+version AND software
+        queried = {r.name.split(": ", 1)[1] for r in results}
+        assert "WordPress 5.8" in queried
+        assert "Drupal 9.3.0" in queried
+        assert "http Apache 2.4.49" in queried  # from port data
 
 
 # ─── Quiet mode tests ───

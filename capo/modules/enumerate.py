@@ -9,7 +9,6 @@ Usage:
 """
 
 import re
-import shlex
 import shutil
 import subprocess
 import time
@@ -145,18 +144,36 @@ def _parse_showmount(stdout: str, _stderr: str) -> dict:
 
 def _parse_whatweb(stdout: str, _stderr: str) -> dict:
     techs = []
+    versioned = []  # name/version pairs — the stuff that matters for CVEs
     # whatweb outputs: ToolName[version], so capture "Name[detail]" pairs
     for m in re.finditer(r"(\w[\w.-]+)\[([^\]]+)\]", stdout):
         name, detail = m.group(1), m.group(2)
         if name.lower() not in ("http",):
-            techs.append(f"{name}/{detail}" if detail else name)
+            entry = f"{name}/{detail}" if detail else name
+            techs.append(entry)
+            # Flag entries with version numbers (digits after a slash/space)
+            if re.search(r"[\d]+\.[\d]+", detail):
+                versioned.append(entry)
     # Also grab standalone bracketed items (status codes, etc.)
     if not techs:
         for part in re.findall(r"\[([^\]]+)\]", stdout):
             part = part.strip()
             if part and not re.match(r"^\d{3}", part):
                 techs.append(part)
-    return {"summary": ", ".join(techs[:6]) if techs else "no findings"}
+    # Feed versioned software into state so searchsploit can query them
+    for entry in versioned:
+        parts = entry.split("/", 1)
+        if len(parts) == 2:
+            state_manager.add_software(parts[0], parts[1], source="whatweb")
+
+    # Prioritize versioned software in summary — that's what leads to CVEs
+    if versioned:
+        summary = ", ".join(versioned[:6])
+    elif techs:
+        summary = ", ".join(techs[:6])
+    else:
+        summary = "no findings"
+    return {"summary": summary, "techs": techs, "versioned": versioned}
 
 
 def _parse_http_headers(stdout: str, _stderr: str) -> dict:
@@ -173,6 +190,27 @@ def _parse_http_headers(stdout: str, _stderr: str) -> dict:
     if powered_by:
         parts.append(powered_by)
     return {"summary": ", ".join(parts) if parts else "no info"}
+
+
+def _parse_common_files(stdout: str, _stderr: str) -> dict:
+    """Parse curl batch probe output — format: 'STATUS_CODE URL' per line."""
+    found = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            code, url = parts[0], parts[1]
+            if code in ("200", "301", "302", "403"):
+                # Extract path from URL
+                path = re.sub(r"https?://[^/]+", "", url)
+                found.append(f"{path} [{code}]")
+                if code == "200":
+                    state_manager.add_directory(path, int(code))
+    if found:
+        return {"summary": ", ".join(found)}
+    return {"summary": "nothing accessible"}
 
 
 def _parse_ffuf_json(stdout: str, _stderr: str) -> dict:
@@ -310,6 +348,7 @@ PARSERS: dict[str, callable] = {
     "showmount": _parse_showmount,
     "whatweb": _parse_whatweb,
     "http_headers": _parse_http_headers,
+    "common_files": _parse_common_files,
     "ffuf_json": _parse_ffuf_json,
     "dig_axfr": _parse_dig_axfr,
     "smtp_user_enum": _parse_smtp_user_enum,
@@ -399,8 +438,6 @@ class EnumerateEngine:
         else:
             # All services with matching open ports
             for svc_name, svc_cfg in self.registry.items():
-                if svc_name == "versions":
-                    continue  # handled separately
                 proto = svc_cfg.get("protocol", "tcp")
                 matched_ports = {
                     p for p in svc_cfg.get("ports", [])
@@ -465,7 +502,8 @@ class EnumerateEngine:
                 encoding="utf-8",
             )
 
-            # Parse if parser available
+            # Parse output — run parser regardless of exit code since many
+            # pentest tools exit non-zero but still produce useful output
             findings = ""
             if parser_name and parser_name in PARSERS:
                 try:
@@ -473,9 +511,6 @@ class EnumerateEngine:
                     findings = parsed.get("summary", "")
                 except Exception:
                     findings = "parser error"
-            elif result.returncode == 0:
-                lines = (result.stdout or "").strip().splitlines()
-                findings = f"{len(lines)} line(s) of output"
 
             # Record in session DB
             try:
@@ -504,27 +539,31 @@ class EnumerateEngine:
             return CmdResult(name=name, tool=tool, cmd=cmd_str,
                              status="error", findings=str(e))
 
-    def _run_searchsploit(self, output_dir: Path) -> list[CmdResult]:
-        """Run searchsploit for each discovered service+version pair."""
+    def _run_searchsploit(self, output_dir: Path,
+                          matched: list[tuple[str, int, dict]]) -> list[CmdResult]:
+        """Run searchsploit for services that were actually enumerated."""
         if not shutil.which("searchsploit"):
             return [CmdResult(name="SearchSploit", tool="searchsploit",
                               cmd="", status="skipped", findings="not installed")]
 
-        versions_cfg = self.registry.get("versions", {})
-        if not versions_cfg:
-            return []
-
+        # Only search versions for ports we actually enumerated
+        enumerated_ports = {port for _, port, _ in matched}
         ports = state_manager.get("ports", [])
         queries = set()
         for p in ports:
+            if p.get("port", 0) not in enumerated_ports:
+                continue
             svc = p.get("service", "").strip()
             ver = p.get("version", "").strip()
             if svc and ver:
                 queries.add(f"{svc} {ver}")
-            if svc:
-                queries.add(svc)
-            if ver:
-                queries.add(ver)
+
+        # Also query software discovered by whatweb / page scraping
+        for sw in state_manager.get("software", []):
+            name = sw.get("name", "").strip()
+            ver = sw.get("version", "").strip()
+            if name and ver:
+                queries.add(f"{name} {ver}")
 
         if not queries:
             return []
@@ -553,6 +592,248 @@ class EnumerateEngine:
                     cmd=cmd_str, status="timeout", findings="timed out",
                 ))
         return results
+
+    # Patterns for scraping interesting data from web pages
+    _SCRAPE_PATTERNS: dict[str, re.Pattern] = {
+        "emails": re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+        "base64": re.compile(r"(?<![a-zA-Z0-9/+=])([A-Za-z0-9+/]{20,}={0,2})(?![a-zA-Z0-9/+=])"),
+        "internal_ips": re.compile(
+            r"\b((?:10|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d{1,3}\.\d{1,3})\b"
+        ),
+        "comments": re.compile(r"<!--(.*?)-->", re.S),
+        "credentials": re.compile(
+            r"(?:password|passwd|pwd|api[_-]?key|token|secret)[\s:=]+[\"']?(\S{4,})[\"']?",
+            re.I,
+        ),
+    }
+
+    # Patterns to detect software+version from HTML content.
+    # Each tuple: (compiled regex, group index for name, group index for version)
+    _SOFTWARE_PATTERNS: list[tuple[re.Pattern, int, int]] = [
+        # <meta name="generator" content="WordPress 5.8.1">
+        (re.compile(
+            r'<meta\s+name=["\']generator["\']\s+content=["\']([A-Za-z][\w.-]*)\s+'
+            r'(\d+\.\d+(?:\.\d+)?(?:[a-z0-9._-]*))',
+            re.I,
+        ), 1, 2),
+        # "Powered by WordPress 5.8" / "Powered by Drupal 9.3.0"
+        (re.compile(
+            r'[Pp]owered\s+by\s+([A-Za-z][\w.-]*)\s+(\d+\.\d+(?:\.\d+)?)',
+        ), 1, 2),
+        # wp-content/themes or wp-includes → WordPress (version from generator above)
+        # /misc/drupal.js or /sites/default → Drupal
+        # /media/jui/js → Joomla
+        # Common URL path patterns: WordPress/5.8 style in query strings
+        (re.compile(
+            r'(?:ver|version)=(\d+\.\d+(?:\.\d+)?(?:[a-z0-9._-]*))\b.*?'
+            r'wp-(?:content|includes)',
+            re.I | re.S,
+        ), 0, 1),  # group 0 unused, we handle this specially
+        # jQuery/3.6.0 or similar lib/version in script src
+        (re.compile(
+            r'(?:jquery|angular|react|vue|bootstrap|lodash|backbone|ember|knockout)'
+            r'[/.-](\d+\.\d+(?:\.\d+)?)',
+            re.I,
+        ), 0, 1),  # name from match text, version from group 1
+        # Apache/2.4.49 or nginx/1.18.0 in HTML (rare but happens in error pages)
+        (re.compile(
+            r'(Apache|nginx|IIS|LiteSpeed|Caddy)[/ ](\d+\.\d+(?:\.\d+)?)',
+            re.I,
+        ), 1, 2),
+        # PHP/7.4.3 in HTML (error pages, phpinfo)
+        (re.compile(r'(PHP)[/ ](\d+\.\d+(?:\.\d+)?)', re.I), 1, 2),
+        # Tomcat/9.0.50, Jetty, GlassFish
+        (re.compile(
+            r'(Tomcat|Jetty|GlassFish|WildFly|Weblogic)[/ ](\d+\.\d+(?:\.\d+)?)',
+            re.I,
+        ), 1, 2),
+    ]
+
+    # CMS fingerprints — detect CMS by path patterns even without explicit version
+    _CMS_FINGERPRINTS: dict[str, re.Pattern] = {
+        "WordPress": re.compile(r'wp-(?:content|includes|admin)[/"\']', re.I),
+        "Drupal": re.compile(r'(?:/misc/drupal\.js|/sites/default/|Drupal\.settings)', re.I),
+        "Joomla": re.compile(r'(?:/media/jui/|/administrator/|Joomla!)', re.I),
+    }
+
+    def _scrape_pages(self, output_dir: Path,
+                      matched: list[tuple[str, int, dict]]) -> list[CmdResult]:
+        """Scrape discovered web pages for software versions, emails, credentials, and more."""
+        if not shutil.which("curl"):
+            return []
+
+        # Collect web ports that were enumerated
+        web_ports: list[tuple[str, int]] = []
+        for svc_name, port, _ in matched:
+            if svc_name == "http":
+                web_ports.append(("http", port))
+            elif svc_name == "https":
+                web_ports.append(("https", port))
+
+        if not web_ports:
+            return []
+
+        ip = state_manager.get_var("IP") or ""
+        if not ip:
+            return []
+
+        # Build URL list: index pages + discovered directories (200 only)
+        urls: list[str] = []
+        for scheme, port in web_ports:
+            urls.append(f"{scheme}://{ip}:{port}/")
+
+        directories = state_manager.get("directories", [])
+        for d in directories:
+            path = d.get("path", "") if isinstance(d, dict) else str(d)
+            status = d.get("status", 0) if isinstance(d, dict) else 200
+            if status == 200 and path:
+                for scheme, port in web_ports:
+                    urls.append(f"{scheme}://{ip}:{port}{path}")
+
+        # Deduplicate and cap at 30 pages to keep it fast
+        urls = list(dict.fromkeys(urls))[:30]
+
+        if not urls:
+            return []
+
+        # Scrape all pages
+        all_emails: set[str] = set()
+        all_software: dict[str, str] = {}  # name → version
+        all_base64: set[str] = set()
+        all_internal_ips: set[str] = set()
+        all_comments: list[str] = []
+        all_creds: set[str] = set()
+        detected_cms: set[str] = set()
+        raw_lines: list[str] = []
+
+        for url in urls:
+            try:
+                curl_flag = "-sk" if url.startswith("https") else "-s"
+                r = subprocess.run(
+                    f"curl {curl_flag} -L --max-time 5 {url}",
+                    shell=True, capture_output=True, text=True, timeout=10,
+                )
+                body = r.stdout or ""
+                if not body:
+                    continue
+
+                raw_lines.append(f"\n# {url}\n{body[:2000]}")
+
+                all_emails.update(self._SCRAPE_PATTERNS["emails"].findall(body))
+
+                # Detect software+version pairs
+                for pattern, name_grp, ver_grp in self._SOFTWARE_PATTERNS:
+                    for m in pattern.finditer(body):
+                        if name_grp == 0 and ver_grp == 1:
+                            # Special case: name from match text, version from group 1
+                            # Extract the software name from the matched text
+                            match_text = m.group(0).lower()
+                            ver = m.group(1)
+                            for lib in ("jquery", "angular", "react", "vue",
+                                        "bootstrap", "lodash", "backbone",
+                                        "ember", "knockout"):
+                                if lib in match_text:
+                                    all_software.setdefault(lib.capitalize(), ver)
+                                    break
+                            # WordPress ver= pattern
+                            if "wp-" in match_text:
+                                all_software.setdefault("WordPress", ver)
+                        else:
+                            name = m.group(name_grp)
+                            ver = m.group(ver_grp)
+                            all_software.setdefault(name, ver)
+
+                # CMS fingerprints (detect CMS even without version)
+                for cms_name, cms_pat in self._CMS_FINGERPRINTS.items():
+                    if cms_pat.search(body):
+                        detected_cms.add(cms_name)
+
+                for b64 in self._SCRAPE_PATTERNS["base64"].findall(body):
+                    # Filter out common false positives (CSS, JS variable names)
+                    if not any(skip in b64 for skip in ("function", "return", "window")):
+                        all_base64.add(b64)
+
+                all_internal_ips.update(self._SCRAPE_PATTERNS["internal_ips"].findall(body))
+
+                for comment in self._SCRAPE_PATTERNS["comments"].findall(body):
+                    comment = comment.strip()
+                    # Only keep non-trivial comments (>10 chars, not just whitespace/dashes)
+                    if len(comment) > 10 and not re.match(r"^[\s\-=]+$", comment):
+                        all_comments.append(comment[:200])
+
+                all_creds.update(self._SCRAPE_PATTERNS["credentials"].findall(body))
+
+            except (subprocess.TimeoutExpired, Exception):
+                continue
+
+        # Feed useful findings into state
+        for email in all_emails:
+            user_part = email.split("@")[0]
+            state_manager.add_user(user_part)
+
+        # Feed software+version into state for searchsploit
+        for name, ver in all_software.items():
+            state_manager.add_software(name, ver, source="page_scrape")
+
+        # Write raw scrape output
+        out_path = output_dir / "page_scrape.txt"
+        out_path.write_text("\n".join(raw_lines[:5000]), encoding="utf-8")
+
+        # Build summary
+        parts: list[str] = []
+        if all_emails:
+            parts.append(f"{len(all_emails)} email(s)")
+        if all_software:
+            sw_strs = [f"{n} {v}" for n, v in sorted(all_software.items())[:5]]
+            parts.append(f"software: {', '.join(sw_strs)}")
+        if detected_cms - set(all_software.keys()):
+            # CMS detected by fingerprint but no version found
+            unversioned = detected_cms - set(all_software.keys())
+            parts.append(f"CMS detected: {', '.join(sorted(unversioned))}")
+        if all_base64:
+            parts.append(f"{len(all_base64)} base64 string(s)")
+        if all_internal_ips:
+            parts.append(f"internal IPs: {', '.join(sorted(all_internal_ips))}")
+        if all_comments:
+            parts.append(f"{len(all_comments)} HTML comment(s)")
+        if all_creds:
+            parts.append(f"{len(all_creds)} credential-like string(s)")
+
+        summary = ", ".join(parts) if parts else "nothing interesting"
+
+        # Write detailed findings file
+        findings_path = output_dir / "page_scrape_findings.txt"
+        findings_lines = [f"# Page Scrape Findings — {len(urls)} page(s) scraped\n"]
+        if all_emails:
+            findings_lines.append(f"\n## Emails\n" + "\n".join(f"  {e}" for e in sorted(all_emails)))
+        if all_software:
+            findings_lines.append(
+                f"\n## Software Detected\n"
+                + "\n".join(f"  {n} {v}" for n, v in sorted(all_software.items()))
+            )
+        if detected_cms:
+            findings_lines.append(
+                f"\n## CMS Fingerprints\n"
+                + "\n".join(f"  {c}" + (" (version unknown)" if c not in all_software else "") for c in sorted(detected_cms))
+            )
+        if all_base64:
+            findings_lines.append(f"\n## Base64 Strings\n" + "\n".join(f"  {b}" for b in sorted(all_base64)[:20]))
+        if all_internal_ips:
+            findings_lines.append(f"\n## Internal IPs\n" + "\n".join(f"  {ip}" for ip in sorted(all_internal_ips)))
+        if all_comments:
+            findings_lines.append(f"\n## HTML Comments\n" + "\n".join(f"  {c}" for c in all_comments[:20]))
+        if all_creds:
+            findings_lines.append(f"\n## Credential-like Strings\n" + "\n".join(f"  {c}" for c in sorted(all_creds)))
+        findings_path.write_text("\n".join(findings_lines) + "\n", encoding="utf-8")
+
+        return [CmdResult(
+            name=f"Page scrape ({len(urls)} pages)",
+            tool="curl",
+            cmd=f"scrape {len(urls)} discovered pages",
+            status="ok",
+            findings=summary,
+            output_file=str(findings_path),
+        )]
 
     def _resolve_wordlist(self, wordlist: str, wordlist_size: str) -> str:
         """Resolve the wordlist path from custom path or size preset."""
@@ -705,9 +986,23 @@ class EnumerateEngine:
 
             all_results.append(svc_result)
 
-        # Run searchsploit for all version combos
+        # Scrape discovered web pages for useful data
+        scrape_results = self._scrape_pages(output_dir, matched)
+        if scrape_results:
+            scrape_svc = ServiceResult(service="page_scrape", port=0)
+            console.print(f"\n[bold white]  PAGE SCRAPE:[/bold white]")
+            for cr in scrape_results:
+                scrape_svc.commands.append(cr)
+                icon = "[green]✓[/green]" if cr.status == "ok" else "[yellow]→[/yellow]"
+                finding_str = f" — {cr.findings}" if cr.findings else ""
+                console.print(f"    {icon} {cr.name}{finding_str}")
+                if cr.status == "ok":
+                    total_ok += 1
+            all_results.append(scrape_svc)
+
+        # Run searchsploit only for enumerated services
         console.print(f"\n[bold white]  VERSION SEARCH:[/bold white]")
-        ss_results = self._run_searchsploit(output_dir)
+        ss_results = self._run_searchsploit(output_dir, matched)
         if ss_results:
             ss_svc = ServiceResult(service="versions", port=0)
             for cr in ss_results:
