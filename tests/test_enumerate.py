@@ -318,6 +318,38 @@ class TestEnumerateEngine:
         assert cr.status == "skipped"
         assert "not installed" in cr.findings
 
+    def test_dc_detection_prioritizes_ad(self, capo_home):
+        """When DC ports (88+389+445) are open, AD services run first."""
+        with patch("capo.config.CAPO_HOME", capo_home), \
+             patch("capo.config.WORKSPACES_DIR", capo_home / "workspaces"):
+            from capo.state import StateManager
+            mgr = StateManager()
+            mgr.set_target("10.10.10.100")
+            # DC-like port profile
+            mgr.add_port(88, "tcp", "kerberos", "", "open")
+            mgr.add_port(389, "tcp", "ldap", "", "open")
+            mgr.add_port(445, "tcp", "microsoft-ds", "", "open")
+            mgr.add_port(135, "tcp", "msrpc", "", "open")
+            mgr.add_port(80, "tcp", "http", "IIS", "open")
+            mgr.add_port(53, "udp", "dns", "", "open")
+
+            with patch("capo.modules.enumerate.state_manager", mgr):
+                engine = EnumerateEngine()
+                matched = engine._resolve_services(None)
+        svc_order = [s[0] for s in matched]
+        # AD services should come before http
+        assert svc_order.index("kerberos") < svc_order.index("http")
+        assert svc_order.index("ldap") < svc_order.index("http")
+        assert svc_order.index("smb") < svc_order.index("http")
+
+    def test_no_ad_priority_without_kerberos(self, engine_with_state):
+        """Normal machines (no kerberos) should NOT trigger AD reordering."""
+        engine, mgr = engine_with_state
+        matched = engine._resolve_services(None)
+        # ssh comes before smb in YAML order — should stay that way
+        svc_order = [s[0] for s in matched]
+        assert svc_order.index("ssh") < svc_order.index("smb")
+
     def test_add_software_to_state(self, engine_with_state):
         engine, mgr = engine_with_state
         mgr.add_software("WordPress", "5.8", source="whatweb")

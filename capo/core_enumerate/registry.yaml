@@ -242,6 +242,12 @@ services:
   smb:
     ports: [139, 445]
     commands:
+      - name: "SMB signing & info"
+        tool: nxc
+        cmd: "nxc smb {IP}"
+        auth: false
+        timeout: 15
+
       - name: "SMB null shares"
         tool: nxc
         cmd: "nxc smb {IP} -u '' -p '' --shares"
@@ -255,6 +261,13 @@ services:
         auth: false
         timeout: 30
         parser: nxc_shares
+
+      - name: "SMB null users"
+        tool: nxc
+        cmd: "nxc smb {IP} -u '' -p '' --users"
+        auth: false
+        timeout: 60
+        parser: nxc_users
 
       - name: "smbclient null list"
         tool: smbclient
@@ -309,6 +322,12 @@ services:
         auth: true
         timeout: 60
         parser: nxc_users
+
+      - name: "SMB auth groups"
+        tool: nxc
+        cmd: "nxc smb {IP} -u {USER} -p {PASS} --groups"
+        auth: true
+        timeout: 60
 
   rpc:
     ports: [111]
@@ -375,6 +394,12 @@ services:
   kerberos:
     ports: [88]
     commands:
+      - name: "Kerbrute user enum"
+        tool: kerbrute
+        cmd: "kerbrute userenum --dc {IP} -d {DOMAIN} /usr/share/seclists/Usernames/xato-net-10-million-usernames-1000.txt -t 50"
+        auth: false
+        timeout: 120
+
       - name: "AS-REP roast (no auth)"
         tool: impacket-GetNPUsers
         cmd: "impacket-GetNPUsers {DOMAIN}/ -usersfile /usr/share/seclists/Usernames/xato-net-10-million-usernames.txt -no-pass -dc-ip {IP}"

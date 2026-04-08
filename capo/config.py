@@ -18,6 +18,9 @@ CORE_CHEATSHEETS_DIR = Path(__file__).parent / "core_cheatsheets"
 # Enumerate registry
 CORE_ENUMERATE_REGISTRY = Path(__file__).parent / "core_enumerate" / "registry.yaml"
 
+# Exploit registry
+CORE_EXPLOIT_REGISTRY = Path(__file__).parent / "core_exploit" / "registry.yaml"
+
 # Pentest tools list
 PENTEST_TOOLS_FILE = Path(__file__).parent / "shell" / "pentest_tools.txt"
 

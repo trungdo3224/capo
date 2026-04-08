@@ -392,11 +392,19 @@ class EnumerateEngine:
         except (yaml.YAMLError, OSError) as e:
             print_error(f"Failed to load enumerate registry: {e}")
 
+    # AD service priority — when a DC or AD-joined machine is detected,
+    # these services run first so findings feed into later checks.
+    _AD_PRIORITY: list[str] = [
+        "kerberos", "ldap", "dns", "smb", "msrpc",
+    ]
+
     def _resolve_services(self, targets: list[str] | None) -> list[tuple[str, int, dict]]:
         """Map requested services/ports to registry entries matched against open ports.
 
         Returns list of (service_name, matched_port, service_config).
         Matches both TCP and UDP ports using (port, protocol) tuples.
+        When a Domain Controller is detected (kerberos + ldap + smb open),
+        AD services are prioritized so findings feed into later checks.
         """
         open_ports_proto = state_manager.get_open_ports_proto()  # {(port, proto), ...}
         if not open_ports_proto:
@@ -446,7 +454,36 @@ class EnumerateEngine:
                 for p in sorted(matched_ports):
                     results.append((svc_name, p, svc_cfg))
 
+        # Detect DC / AD-joined machine and reorder if needed
+        svc_names = {s[0] for s in results}
+        is_dc = {"kerberos", "ldap"}.issubset(svc_names) and "smb" in svc_names
+        is_ad = not is_dc and "kerberos" in svc_names and "smb" in svc_names
+
+        if is_dc:
+            console.print(
+                "[bold yellow][!] Domain Controller detected "
+                "(Kerberos + LDAP + SMB) — prioritizing AD checks[/bold yellow]"
+            )
+            results = self._prioritize_ad(results)
+        elif is_ad:
+            console.print(
+                "[bold yellow][!] AD-joined machine detected "
+                "(Kerberos + SMB) — prioritizing AD checks[/bold yellow]"
+            )
+            results = self._prioritize_ad(results)
+
         return results
+
+    def _prioritize_ad(
+        self, results: list[tuple[str, int, dict]]
+    ) -> list[tuple[str, int, dict]]:
+        """Reorder resolved services so AD services run first."""
+        def sort_key(item: tuple[str, int, dict]) -> int:
+            name = item[0]
+            if name in self._AD_PRIORITY:
+                return self._AD_PRIORITY.index(name)
+            return len(self._AD_PRIORITY)
+        return sorted(results, key=sort_key)
 
     def _inject(self, cmd: str, port: int, output_dir: Path,
                 username: str = "", password: str = "",

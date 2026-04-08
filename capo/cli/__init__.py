@@ -44,6 +44,7 @@ from capo.cli.target import target_app
 from capo.cli.found import found_app
 from capo.cli.scan import scan_app
 from capo.cli.enumerate_cmds import enumerate_app
+from capo.cli.exploit_cmds import exploit_app
 from capo.cli.nxc import nxc_app
 from capo.cli.kerberos_cmds import kerberos_app
 from capo.cli.brute import brute_app
@@ -58,6 +59,7 @@ app.add_typer(target_app, name="target")
 app.add_typer(found_app, name="found")
 app.add_typer(scan_app, name="scan")
 app.add_typer(enumerate_app, name="enumerate")
+app.add_typer(exploit_app, name="exploit")
 app.add_typer(nxc_app, name="nxc")
 app.add_typer(kerberos_app, name="kerberos")
 app.add_typer(brute_app, name="brute")
